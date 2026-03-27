@@ -1,11 +1,12 @@
 {
   "name": "bc-xlf-editor",
   "publisher": "B0tis",
-  "displayName": "BC XLF Merger",
+  "displayName": "BC XLF Editor",
   "description": "Merge Business Central XLF translation files — fast, git-diff friendly",
+  "license": "MIT",
   "version": "1.0.1",
   "engines": {
-    "vscode": "^1.110.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -20,7 +21,7 @@
     "customEditors": [
       {
         "viewType": "bcXlf.mergeEditor",
-        "displayName": "BC XLF Merge View",
+        "displayName": "BC XLF Editor",
         "selector": [
           {
             "filenamePattern": "*.xlf"
@@ -60,7 +61,7 @@
       ]
     },
     "configuration": {
-      "title": "BC XLF Merger",
+      "title": "BC XLF Editor",
       "properties": {
         "bcXlf.defaultStrategy": {
           "type": "string",
@@ -110,7 +111,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/sax": "^1.2.7",
-    "@types/vscode": "^1.110.0",
+    "@types/vscode": "^1.85.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",

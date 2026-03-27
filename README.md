@@ -1,4 +1,4 @@
-# BC XLF Merger
+# BC XLF Editor
 
 VS Code extension for merging **Business Central** XLIFF translation files: compiler output (`.g.xlf`) with existing locale files (`de-DE.xlf`, etc.). Parsing uses a streaming SAX pipeline; merge output is sorted and normalized for predictable Git diffs.
 
@@ -6,7 +6,7 @@ VS Code extension for merging **Business Central** XLIFF translation files: comp
 
 - **Merge** base `.g.xlf` into a target translation file (updates in place on the file you choose as “custom”).
 - **Strategies** (`keep-translated` vs `prefer-source`) when source text changes.
-- **Optional** “BC XLF Merge View” custom editor for browsing parsed `trans-unit` rows (virtualized list).
+- **Optional** “BC XLF Editor” custom editor for browsing parsed `trans-unit` rows (virtualized list).
 - **Progress** notification for large files (over 1000 `trans-unit` entries).
 
 ## Commands

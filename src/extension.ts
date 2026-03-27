@@ -95,7 +95,7 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'BC XLF Merge',
+        title: 'BC XLF Editor',
         cancellable: false
       },
       async (progress) => {
@@ -156,7 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const s = lastStats;
       const doc = await vscode.workspace.openTextDocument({
         content: [
-          'BC XLF Merge — Statistik',
+          'BC XLF Editor — Statistik',
           '',
           `Gesamt: ${s.total}`,
           `Unverändert: ${s.unchanged}`,
