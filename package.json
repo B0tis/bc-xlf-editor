@@ -1,0 +1,123 @@
+{
+  "name": "bc-xlf-editor",
+  "publisher": "local",
+  "displayName": "BC XLF Merger",
+  "description": "Merge Business Central XLF translation files — fast, git-diff friendly",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCustomEditor:bcXlf.mergeEditor",
+    "onLanguage:xml",
+    "workspaceContains:**/*.xlf"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "bcXlf.mergeEditor",
+        "displayName": "BC XLF Merge View",
+        "selector": [
+          {
+            "filenamePattern": "*.xlf"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "bcXlf.merge",
+        "title": "BC XLF: Merge Translation Files"
+      },
+      {
+        "command": "bcXlf.mergeFromContext",
+        "title": "BC XLF: Merge Translation Files"
+      },
+      {
+        "command": "bcXlf.showSummary",
+        "title": "BC XLF: Show Last Merge Summary"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "bcXlf.mergeFromContext",
+          "when": "resourceExtname == .xlf",
+          "group": "bcxlf@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bcXlf.mergeFromContext",
+          "when": "resourceExtname == .xlf",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "BC XLF Merger",
+      "properties": {
+        "bcXlf.defaultStrategy": {
+          "type": "string",
+          "default": "keep-translated",
+          "enum": [
+            "keep-translated",
+            "prefer-source"
+          ],
+          "description": "Merge-Strategie bei geänderter Source"
+        },
+        "bcXlf.sortById": {
+          "type": "boolean",
+          "default": true,
+          "description": "Trans-units alphabetisch nach ID sortieren (stabiler Git-Diff)"
+        },
+        "bcXlf.preserveRemoved": {
+          "type": "boolean",
+          "default": false,
+          "description": "Entfernte Units als needs-review behalten statt löschen"
+        },
+        "bcXlf.openDiffAfterMerge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Git-Diff nach Merge automatisch öffnen"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js && node esbuild-webview.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "watch:webview": "node esbuild-webview.js --watch",
+    "package": "pnpm run check-types && pnpm run lint && node esbuild.js --production && node esbuild-webview.js --production",
+    "vsix": "pnpm run package && vsce package --no-dependencies",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "sax": "^1.4.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/sax": "^1.2.7",
+    "@types/vscode": "^1.110.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.27.3",
+    "eslint": "^9.39.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "@vscode/vsce": "^3.7.1"
+  }
+}

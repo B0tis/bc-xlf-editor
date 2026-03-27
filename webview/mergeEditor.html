@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="{{CSP}}" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 8px;
+        font-family: var(--vscode-font-family);
+        font-size: var(--vscode-font-size);
+        color: var(--vscode-foreground);
+        background: var(--vscode-editor-background);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      #status {
+        flex: 0 0 auto;
+        margin-bottom: 8px;
+        opacity: 0.85;
+      }
+      #viewport {
+        flex: 1 1 auto;
+        overflow: auto;
+        border: 1px solid var(--vscode-panel-border);
+        min-height: 120px;
+      }
+      #spacer {
+        position: relative;
+        width: 100%;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 1fr 120px;
+        gap: 6px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+        align-items: start;
+        min-height: 58px;
+      }
+      .cell {
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
+      .cell.id {
+        font-family: var(--vscode-editor-font-family);
+        font-size: 11px;
+        opacity: 0.95;
+      }
+      .cell.state {
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status">Loading…</div>
+    <div id="viewport">
+      <div id="spacer"></div>
+    </div>
+    <script src="{{SCRIPT_URI}}"></script>
+  </body>
+</html>
