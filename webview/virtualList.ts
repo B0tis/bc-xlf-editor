@@ -7,7 +7,7 @@ export class VirtualList {
   private viewport: HTMLElement;
   private spacer: HTMLElement;
   private items: unknown[] = [];
-  private itemHeight = 58;
+  private itemHeight = 108;
   private visibleBuffer = 5;
   private renderFn: RowRenderer;
 

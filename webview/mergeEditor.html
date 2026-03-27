@@ -9,7 +9,7 @@
       }
       body {
         margin: 0;
-        padding: 8px;
+        padding: 10px 12px;
         font-family: var(--vscode-font-family);
         font-size: var(--vscode-font-size);
         color: var(--vscode-foreground);
@@ -18,15 +18,240 @@
         flex-direction: column;
         height: 100vh;
       }
+      .merge-header {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 6px;
+        padding: 6px 8px;
+        background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 6px;
+      }
+      .merge-header[hidden] {
+        display: none !important;
+      }
+      .merge-header-main {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+      }
+      .file-stats {
+        flex: 1 1 auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+        min-width: 0;
+      }
+      .stat-chip {
+        display: inline-flex;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 5px;
+        min-width: 0;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-panel-border);
+        font-size: 10px;
+        line-height: 1.2;
+        opacity: 0.95;
+      }
+      .stat-chip .stat-value {
+        font-size: 13px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+      }
+      .stat-chip .stat-label {
+        opacity: 0.78;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-size: 9px;
+      }
+      .stat-chip.stat-total .stat-value {
+        color: var(--vscode-foreground);
+      }
+      .stat-chip.stat-missing {
+        border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-charts-red));
+      }
+      .stat-chip.stat-missing .stat-value {
+        color: var(--vscode-errorForeground, var(--vscode-charts-red));
+      }
+      .stat-chip.stat-review {
+        border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-charts-yellow));
+      }
+      .stat-chip.stat-review .stat-value {
+        color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
+      }
+      .stat-chip.stat-adapt .stat-value {
+        color: var(--vscode-editorInfo-foreground, var(--vscode-charts-blue));
+      }
+      .stat-chip.stat-done .stat-value {
+        color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+      }
       #status {
         flex: 0 0 auto;
-        margin-bottom: 8px;
-        opacity: 0.85;
+        margin-bottom: 4px;
+        opacity: 0.92;
+        line-height: 1.35;
+        font-size: 11px;
+      }
+      .filters {
+        flex: 1 1 260px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 6px 10px;
+        min-width: 0;
+      }
+      .filter-grow {
+        flex: 1 1 160px;
+        min-width: 120px;
+      }
+      .filter-field label {
+        display: block;
+        font-size: 10px;
+        font-weight: 600;
+        opacity: 0.88;
+        letter-spacing: 0.03em;
+        margin-bottom: 2px;
+      }
+      .filter-text {
+        width: 100%;
+        font-size: 12px;
+        font-family: var(--vscode-font-family);
+        color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+        border-radius: 4px;
+        padding: 4px 8px;
+      }
+      .filter-text::placeholder {
+        opacity: 0.55;
+      }
+      .filter-clear {
+        font-size: 11px;
+        padding: 4px 10px;
+        margin-top: 0;
+        cursor: pointer;
+        align-self: flex-end;
+        margin-bottom: 1px;
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 4px;
+      }
+      .filter-clear:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .filter-hint {
+        flex: 1 1 100%;
+        font-size: 9px;
+        opacity: 0.72;
+        margin: 0;
+        line-height: 1.35;
+      }
+      /* Multi-state dropdown */
+      .filter-state-wrap {
+        flex: 0 1 200px;
+        min-width: 140px;
+        position: relative;
+        z-index: 4;
+      }
+      .state-dd-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        text-align: left;
+        font-size: 11px;
+        font-family: var(--vscode-font-family);
+        color: var(--vscode-dropdown-foreground);
+        background: var(--vscode-dropdown-background);
+        border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border));
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+      }
+      .state-dd-toggle:hover {
+        background: var(--vscode-list-hoverBackground, var(--vscode-dropdown-background));
+      }
+      .state-dd-toggle[aria-expanded='true'] {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .state-dd-summary {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .state-dd-caret {
+        flex: 0 0 auto;
+        opacity: 0.7;
+        font-size: 10px;
+      }
+      .state-dd-panel {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        margin-top: -1px;
+        max-height: 220px;
+        overflow: auto;
+        padding: 8px 10px 10px;
+        background: var(--vscode-dropdown-background);
+        border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border));
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+      }
+      .state-dd-panel[hidden] {
+        display: none !important;
+      }
+      .state-dd-hint {
+        font-size: 10px;
+        opacity: 0.75;
+        line-height: 1.35;
+        margin: 0 0 8px;
+      }
+      .state-dd-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .state-dd-row:hover {
+        color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+        background: var(--vscode-list-hoverBackground, transparent);
+        margin: 0 -6px;
+        padding-left: 6px;
+        padding-right: 6px;
+        border-radius: 3px;
+      }
+      .state-dd-row input {
+        flex: 0 0 auto;
+        cursor: pointer;
+      }
+      .state-dd-row span {
+        flex: 1;
+        min-width: 0;
+        word-break: break-word;
       }
       #viewport {
         flex: 1 1 auto;
         overflow: auto;
         border: 1px solid var(--vscode-panel-border);
+        border-radius: 4px;
         min-height: 120px;
       }
       #spacer {
@@ -35,28 +260,115 @@
       }
       .row {
         display: grid;
-        grid-template-columns: 1.2fr 1fr 1fr 120px;
-        gap: 6px;
-        padding: 6px 8px;
+        grid-template-columns: minmax(88px, 0.95fr) minmax(72px, 1fr) 76px minmax(96px, 1.1fr) minmax(120px, 0.85fr);
+        gap: 8px;
+        padding: 8px 10px;
         border-bottom: 1px solid var(--vscode-panel-border);
         align-items: start;
-        min-height: 58px;
+        min-height: 108px;
+        isolation: isolate;
       }
       .cell {
         word-break: break-word;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .cell.src {
         white-space: pre-wrap;
+        font-size: 12px;
+        opacity: 0.95;
+        max-height: 5.75rem;
+        overflow-y: auto;
       }
       .cell.id {
         font-family: var(--vscode-editor-font-family);
-        font-size: 11px;
-        opacity: 0.95;
+        font-size: 10px;
+        line-height: 1.35;
+        opacity: 0.9;
+        max-height: 5.75rem;
+        overflow-y: auto;
       }
-      .cell.state {
+      .cell.jump {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        align-self: center;
+      }
+      .jump-btn {
         font-size: 11px;
+        padding: 4px 8px;
+        cursor: pointer;
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 4px;
+      }
+      .jump-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .target-input {
+        width: 100%;
+        min-height: 64px;
+        max-height: 5.75rem;
+        resize: none;
+        overflow-y: auto;
+        font-family: var(--vscode-editor-font-family);
+        font-size: 12px;
+        line-height: 1.35;
+        color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+        border-radius: 4px;
+        padding: 6px 8px;
+      }
+      .state-select {
+        width: 100%;
+        font-size: 11px;
+        color: var(--vscode-dropdown-foreground);
+        background: var(--vscode-dropdown-background);
+        border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border));
+        border-radius: 4px;
+        padding: 5px;
       }
     </style>
   </head>
   <body>
+    <div id="mergeHeader" class="merge-header" hidden aria-label="Translation merge">
+      <div class="merge-header-main">
+        <div id="fileStats" class="file-stats" aria-label="Translation file summary"></div>
+        <div id="filters" class="filters">
+          <div class="filter-field filter-state-wrap">
+            <label id="stateFilterLabel">States</label>
+            <div class="state-dd" id="stateDd">
+              <button type="button" class="state-dd-toggle" id="stateDdToggle" aria-expanded="false" aria-haspopup="true">
+                <span class="state-dd-summary" id="stateDdSummary">All states</span>
+                <span class="state-dd-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="state-dd-panel" id="stateDdPanel" hidden role="group" aria-labelledby="stateFilterLabel">
+                <p class="state-dd-hint">Leave all unchecked to show every state. Check one or more to list rows in any of those states.</p>
+                <div id="stateDdList"></div>
+              </div>
+            </div>
+          </div>
+          <div class="filter-field filter-grow">
+            <label for="filterText">Search id, source, or target</label>
+            <input
+              type="search"
+              id="filterText"
+              class="filter-text"
+              placeholder="Type to filter rows…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <button type="button" id="filterClear" class="filter-clear">Clear</button>
+        </div>
+      </div>
+      <p class="filter-hint">
+        BC XLF trans-unit ids are compiler hashes (they do not match AL object names). Use <strong>AL</strong> to find
+        captions in <code>*.al</code> (source text + Xliff note hints). Use <strong>XLF</strong> to jump to the XML.
+      </p>
+    </div>
     <div id="status">Loading…</div>
     <div id="viewport">
       <div id="spacer"></div>

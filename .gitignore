@@ -1,1 +1,24 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Extension build outputs (esbuild → dist; test compile → out)
+dist/
+out/
+
+# Packaged extension (pnpm run vsix / vsce package)
+*.vsix
+
+# vscode-test / @vscode/test-electron
+.vscode-test/
+
+# Logs and tool caches
+*.log
+pnpm-debug.log*
+.eslintcache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript incremental build info (if enabled later)
+*.tsbuildinfo
