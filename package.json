@@ -3,7 +3,7 @@
   "publisher": "B0tis",
   "displayName": "BC XLF Merger",
   "description": "Merge Business Central XLF translation files — fast, git-diff friendly",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.110.0"
   },
