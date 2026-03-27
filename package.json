@@ -4,6 +4,11 @@
   "displayName": "BC XLF Editor",
   "description": "Merge Business Central XLF translation files — fast, git-diff friendly",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/B0tis/bc-xlf-editor.git"
+  },
+  "homepage": "https://github.com/B0tis/bc-xlf-editor#readme",
   "version": "1.0.1",
   "engines": {
     "vscode": "^1.85.0"
