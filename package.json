@@ -9,7 +9,7 @@
     "url": "https://github.com/B0tis/bc-xlf-editor.git"
   },
   "homepage": "https://github.com/B0tis/bc-xlf-editor#readme",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": {
     "vscode": "^1.85.0"
   },
