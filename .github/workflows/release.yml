@@ -1,0 +1,105 @@
+# Bump version, push tag, attach .vsix to a GitHub Release, optionally publish to
+# Visual Studio Marketplace and Open VSX.
+#
+# Setup (repository Settings → Secrets and variables → Actions):
+#   VSCE_PAT          — Azure DevOps PAT with Marketplace > Manage scope
+#                       (https://code.visualstudio.com/api/working-with-extensions/publishing-extension#publishing-extensions)
+#   OPEN_VSX_TOKEN    — Personal access token from https://open-vsx.org/user-settings/tokens
+#
+# Before first marketplace publish, set package.json "publisher" to your marketplace
+# publisher id (not "local") and ensure the extension is created under that publisher.
+#
+# If the default branch is protected, allow GitHub Actions to push (Settings → Branches →
+# bypass list) or use checkout with a PAT that has contents:write (set token: on checkout).
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: Semver segment to bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      publish_to_marketplaces:
+        description: Publish to VS Marketplace and Open VSX (needs VSCE_PAT and OPEN_VSX_TOKEN)
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version and create tag
+        id: bump
+        run: |
+          npm version "${{ github.event.inputs.version_bump }}" -m "chore(release): %s"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build VSIX
+        run: pnpm run vsix
+
+      - name: Push version commit and tag
+        run: |
+          git push origin "${{ github.ref_name }}"
+          git push origin "v${{ steps.bump.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.version }}
+          name: v${{ steps.bump.outputs.version }}
+          files: "*.vsix"
+          generate_release_notes: true
+
+      - name: Publish to Visual Studio Marketplace
+        if: ${{ (github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true') && secrets.VSCE_PAT != '' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          VSIX=$(ls -1 ./*.vsix | head -1)
+          npx --yes @vscode/vsce publish --packagePath "$VSIX" -p "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ (github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true') && secrets.OPEN_VSX_TOKEN != '' }}
+        env:
+          OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: |
+          VSIX=$(ls -1 ./*.vsix | head -1)
+          npx --yes ovsx publish "$VSIX" -p "$OVSX_PAT"
