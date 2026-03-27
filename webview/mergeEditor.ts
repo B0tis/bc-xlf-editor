@@ -38,7 +38,8 @@ function postUpdate(u: UnitRow): void {
 function renderRow(
   item: unknown,
   afterRowStateChange: () => void,
-  afterTargetBlur: () => void
+  afterTargetBlur: () => void,
+  editingLocked: boolean
 ): HTMLElement {
   const u = item as UnitRow;
   const row = document.createElement('div');
@@ -92,12 +93,20 @@ function renderRow(
     postUpdate(u);
     afterTargetBlur();
   });
+  ta.disabled = editingLocked;
+  if (editingLocked) {
+    ta.title = 'Resolve Git merge conflicts in the panel above first.';
+  }
   tgtCell.appendChild(ta);
 
   const stCell = document.createElement('div');
   stCell.className = 'cell state';
   const sel = document.createElement('select');
   sel.className = 'state-select';
+  sel.disabled = editingLocked;
+  if (editingLocked) {
+    sel.title = 'Resolve Git merge conflicts in the panel above first.';
+  }
   const opts = [...stateOptions];
   if (!opts.includes(u.targetState)) {
     opts.unshift(u.targetState);
@@ -274,7 +283,7 @@ function makeStatChip(label: string, value: number, className: string): HTMLElem
   return chip;
 }
 
-function updateFileStats(container: HTMLElement, units: UnitRow[]): void {
+function updateFileStats(container: HTMLElement, units: UnitRow[], gitConflictCount: number): void {
   container.replaceChildren();
   if (units.length === 0) {
     container.appendChild(makeStatChip('Trans-units', 0, 'stat-total'));
@@ -282,6 +291,9 @@ function updateFileStats(container: HTMLElement, units: UnitRow[]): void {
   }
   const st = computeFileStats(units);
   container.appendChild(makeStatChip('Total', st.total, 'stat-total'));
+  if (gitConflictCount > 0) {
+    container.appendChild(makeStatChip('Git conflicts', gitConflictCount, 'stat-review'));
+  }
   container.appendChild(makeStatChip('Needs translation', st.needsTranslation, 'stat-missing'));
   container.appendChild(makeStatChip('Empty target', st.emptyTarget, 'stat-missing'));
   container.appendChild(makeStatChip('Needs review', st.needsReview, 'stat-review'));
@@ -293,10 +305,84 @@ function updateFileStats(container: HTMLElement, units: UnitRow[]): void {
   }
 }
 
+interface GitConflictPayload {
+  index: number;
+  transUnitId: string;
+  ours: { source: string; target: string; targetState: string };
+  theirs: { source: string; target: string; targetState: string };
+}
+
+function formatConflictSide(side: GitConflictPayload['ours']): string {
+  return `source:\n${side.source}\n\ntarget:\n${side.target}\n\nstate: ${side.targetState}`;
+}
+
+function renderGitMergeCards(container: HTMLElement, conflicts: GitConflictPayload[]): void {
+  container.replaceChildren();
+  for (const c of conflicts) {
+    const card = document.createElement('div');
+    card.className = 'git-merge-card';
+
+    const idEl = document.createElement('div');
+    idEl.className = 'git-merge-card-id';
+    idEl.textContent = c.transUnitId;
+
+    const cols = document.createElement('div');
+    cols.className = 'git-merge-cols';
+
+    const oursWrap = document.createElement('div');
+    const oursLab = document.createElement('div');
+    oursLab.className = 'git-merge-side-label';
+    oursLab.textContent = 'Current (ours / HEAD)';
+    const oursPre = document.createElement('pre');
+    oursPre.className = 'git-merge-pre';
+    oursPre.textContent = formatConflictSide(c.ours);
+    oursWrap.appendChild(oursLab);
+    oursWrap.appendChild(oursPre);
+
+    const theirsWrap = document.createElement('div');
+    const theirsLab = document.createElement('div');
+    theirsLab.className = 'git-merge-side-label';
+    theirsLab.textContent = 'Incoming (theirs)';
+    const theirsPre = document.createElement('pre');
+    theirsPre.className = 'git-merge-pre';
+    theirsPre.textContent = formatConflictSide(c.theirs);
+    theirsWrap.appendChild(theirsLab);
+    theirsWrap.appendChild(theirsPre);
+
+    cols.appendChild(oursWrap);
+    cols.appendChild(theirsWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'git-merge-actions';
+    const bOurs = document.createElement('button');
+    bOurs.type = 'button';
+    bOurs.className = 'git-merge-pick-primary';
+    bOurs.textContent = 'Use current (ours)';
+    bOurs.addEventListener('click', () => {
+      vscode.postMessage({ type: 'resolveGitConflict', index: c.index, side: 'ours' });
+    });
+    const bTheirs = document.createElement('button');
+    bTheirs.type = 'button';
+    bTheirs.textContent = 'Use incoming (theirs)';
+    bTheirs.addEventListener('click', () => {
+      vscode.postMessage({ type: 'resolveGitConflict', index: c.index, side: 'theirs' });
+    });
+    actions.appendChild(bOurs);
+    actions.appendChild(bTheirs);
+
+    card.appendChild(idEl);
+    card.appendChild(cols);
+    card.appendChild(actions);
+    container.appendChild(card);
+  }
+}
+
 function boot(): void {
   const viewport = document.getElementById('viewport');
   const spacer = document.getElementById('spacer');
   const mergeHeader = document.getElementById('mergeHeader');
+  const gitMergePanel = document.getElementById('gitMergePanel');
+  const gitMergeCards = document.getElementById('gitMergeCards');
   const fileStats = document.getElementById('fileStats');
   const status = document.getElementById('status');
   const filtersEl = document.getElementById('filters');
@@ -312,6 +398,8 @@ function boot(): void {
     !viewport ||
     !spacer ||
     !mergeHeader ||
+    !gitMergePanel ||
+    !gitMergeCards ||
     !fileStats ||
     !status ||
     !filtersEl ||
@@ -330,6 +418,8 @@ function boot(): void {
   let list: VirtualList;
 
   let firstUnitsLoad = true;
+  const uiState = { editingLocked: false };
+  let gitConflictCount = 0;
 
   const refreshList = (opts?: { resetScroll?: boolean }): void => {
     const stateSet = getStateFilterSet(stateDdList);
@@ -340,11 +430,13 @@ function boot(): void {
     list.setItems(filtered);
     updateStateDropdownSummary(stateDdList, stateDdSummary);
 
-    updateFileStats(fileStats, allUnits);
+    updateFileStats(fileStats, allUnits, gitConflictCount);
 
     const total = allUnits.length;
     const shown = filtered.length;
-    const hint = ' — edit target / state; changes apply to the file buffer';
+    const hint = uiState.editingLocked
+      ? ' — resolve Git conflicts above to edit targets'
+      : ' — edit target / state; changes apply to the file buffer';
     if (!hasActiveFilters(stateDdList, filterText)) {
       status.textContent = `List: ${total} trans-units${hint}`;
     } else {
@@ -363,8 +455,21 @@ function boot(): void {
   };
 
   list = new VirtualList(viewport, spacer, (item) =>
-    renderRow(item, () => refreshList(), scheduleRefreshList)
+    renderRow(item, () => refreshList(), scheduleRefreshList, uiState.editingLocked)
   );
+
+  const gitMergeAcceptAllOurs = document.getElementById('gitMergeAcceptAllOurs');
+  const gitMergeAcceptAllTheirs = document.getElementById('gitMergeAcceptAllTheirs');
+  if (gitMergeAcceptAllOurs) {
+    gitMergeAcceptAllOurs.addEventListener('click', () => {
+      vscode.postMessage({ type: 'resolveAllGitConflicts', side: 'ours' });
+    });
+  }
+  if (gitMergeAcceptAllTheirs) {
+    gitMergeAcceptAllTheirs.addEventListener('click', () => {
+      vscode.postMessage({ type: 'resolveAllGitConflicts', side: 'theirs' });
+    });
+  }
 
   const ro = new ResizeObserver(() => list.refresh());
   ro.observe(viewport);
@@ -407,10 +512,26 @@ function boot(): void {
       units?: UnitRow[];
       states?: string[];
       message?: string;
+      gitConflicts?: GitConflictPayload[];
+      editingLocked?: boolean;
     };
     if (msg.type === 'loading') {
       mergeHeader.hidden = true;
+      gitMergePanel.hidden = true;
+      gitMergeCards.replaceChildren();
       status.textContent = msg.message ?? 'Loading…';
+      return;
+    }
+    if (msg.type === 'parseError' && typeof msg.message === 'string') {
+      mergeHeader.hidden = true;
+      gitMergePanel.hidden = true;
+      gitMergeCards.replaceChildren();
+      allUnits = [];
+      gitConflictCount = 0;
+      uiState.editingLocked = false;
+      list.setItems([]);
+      updateFileStats(fileStats, allUnits, 0);
+      status.textContent = `Parse error: ${msg.message}`;
       return;
     }
     if (msg.type === 'units' && msg.units) {
@@ -422,6 +543,16 @@ function boot(): void {
         note: typeof u.note === 'string' ? u.note : ''
       }));
       mergeHeader.hidden = false;
+      const gc = Array.isArray(msg.gitConflicts) ? (msg.gitConflicts as GitConflictPayload[]) : [];
+      gitConflictCount = gc.length;
+      uiState.editingLocked = Boolean(msg.editingLocked);
+      if (gc.length > 0) {
+        renderGitMergeCards(gitMergeCards, gc);
+        gitMergePanel.hidden = false;
+      } else {
+        gitMergeCards.replaceChildren();
+        gitMergePanel.hidden = true;
+      }
       const prevChecked = getCheckedStateSet(stateDdList);
       rebuildStateFilterList(stateDdList, prevChecked);
       updateStateDropdownSummary(stateDdList, stateDdSummary);

@@ -9,8 +9,13 @@ import { MergeEditorProvider } from './mergeEditorProvider';
 let lastStats: MergeStats | undefined;
 
 function countTransUnits(content: string): number {
-  const m = content.match(/<trans-unit\b/gi);
-  return m ? m.length : 0;
+  const re = /<trans-unit\b/gi;
+  let n = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    n++;
+  }
+  return n;
 }
 
 function buildOutputHeader(base: XlfDocument, custom: XlfDocument): XlfDocument {
@@ -34,21 +39,22 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
   ): Promise<void> => {
     const report = (message: string) => progress?.report({ message });
 
+    const config = vscode.workspace.getConfiguration('bcXlf');
+
     report('Parse Base XLF…');
-    const base = await parseXlf(baseContent, (parsed) => {
+    const { document: base } = await parseXlf(baseContent, (parsed) => {
       if (n > 1000 && parsed % 500 === 0) {
         report(`Base: ${parsed} units geparst…`);
       }
     });
 
     report('Parse Custom XLF…');
-    const custom = await parseXlf(customContent, (parsed) => {
+    const { document: custom } = await parseXlf(customContent, (parsed) => {
       if (n > 1000 && parsed % 500 === 0) {
         report(`Custom: ${parsed} units geparst…`);
       }
     });
 
-    const config = vscode.workspace.getConfiguration('bcXlf');
     const options: MergeOptions = {
       strategy: config.get('defaultStrategy', 'keep-translated'),
       sortOutput: config.get('sortById', true),

@@ -7,6 +7,7 @@ VS Code extension for merging **Business Central** XLIFF translation files: comp
 - **Merge** base `.g.xlf` into a target translation file (updates in place on the file you choose as “custom”).
 - **Strategies** (`keep-translated` vs `prefer-source`) when source text changes.
 - **Optional** “BC XLF Editor” custom editor for browsing parsed `trans-unit` rows (virtualized list).
+- **Git merge conflicts** in an `.xlf` file: a built-in panel shows **ours** vs **theirs** for each conflict block so you can pick a side without hand-editing markers first.
 - **Progress** notification for large files (over 1000 `trans-unit` entries).
 
 ## Commands

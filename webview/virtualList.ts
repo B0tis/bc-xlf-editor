@@ -52,9 +52,6 @@ export class VirtualList {
       fragment.appendChild(el);
     }
 
-    while (this.spacer.firstChild) {
-      this.spacer.removeChild(this.spacer.firstChild);
-    }
-    this.spacer.appendChild(fragment);
+    this.spacer.replaceChildren(fragment);
   }
 }

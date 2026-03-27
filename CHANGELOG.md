@@ -1,10 +1,17 @@
 # Change Log
-
 All notable changes to the BC XLF Editor extension will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+
+## [1.0.3] - 2026-03-27
+
+### Changed
+
+- **Performance — merge command:** Counting `trans-unit` entries for progress reporting no longer builds a giant array of regex matches on very large files.
+- **Performance — XLF / Git conflicts:** Resolving all merge conflicts in one action applies replacements in a single pass instead of re-scanning the file after each block. Locating the owning `trans-unit` for each conflict uses one index of open tags plus binary search instead of re-scanning the prefix for every block. Files without `<<<<<<<` markers skip the conflict regex and strip step and go straight to SAX parsing.
+- **Performance — merge editor:** Hot paths use a lightweight conflict-marker check instead of full conflict analysis. “Jump to AL” scans `.al` files in an order ranked by Xliff note path hints so likely matches are found sooner. The custom editor HTML template is read from disk once per process. Refresh work is queued so overlapping parse requests do not run in parallel.
+- **Performance — webview:** The virtual list updates visible rows with `replaceChildren` instead of removing nodes one by one.
 
 ## [1.0.1] - 2026-03-27
 

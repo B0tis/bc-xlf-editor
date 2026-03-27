@@ -32,6 +32,142 @@
       .merge-header[hidden] {
         display: none !important;
       }
+      .git-merge-panel {
+        flex: 1 1 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 4px;
+        background: var(
+          --vscode-inputValidation-warningBackground,
+          color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 10%, transparent)
+        );
+        border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground, #cca700));
+      }
+      .git-merge-panel[hidden] {
+        display: none !important;
+      }
+      .git-merge-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+      }
+      .git-merge-toolbar button {
+        font-size: 11px;
+        padding: 6px 12px;
+        cursor: pointer;
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 4px;
+      }
+      .git-merge-toolbar button:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .git-merge-toolbar button.git-merge-pick-primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+      }
+      .git-merge-toolbar button.git-merge-pick-primary:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+      .git-merge-title {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .git-merge-hint {
+        margin: 0;
+        font-size: 10px;
+        opacity: 0.85;
+        line-height: 1.35;
+      }
+      .git-merge-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: min(42vh, 420px);
+        overflow-y: auto;
+      }
+      .git-merge-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 10px;
+        background: var(--vscode-editor-background);
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 4px;
+      }
+      .git-merge-card-id {
+        font-family: var(--vscode-editor-font-family);
+        font-size: 10px;
+        line-height: 1.35;
+        word-break: break-word;
+        opacity: 0.95;
+      }
+      .git-merge-cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        align-items: start;
+      }
+      @media (max-width: 520px) {
+        .git-merge-cols {
+          grid-template-columns: 1fr;
+        }
+      }
+      .git-merge-side-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        opacity: 0.8;
+        margin-bottom: 4px;
+      }
+      .git-merge-pre {
+        margin: 0;
+        padding: 6px 8px;
+        font-family: var(--vscode-editor-font-family);
+        font-size: 11px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 9rem;
+        overflow-y: auto;
+        background: var(--vscode-textBlockQuote-background, var(--vscode-input-background));
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 3px;
+        color: var(--vscode-foreground);
+      }
+      .git-merge-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .git-merge-actions button {
+        font-size: 11px;
+        padding: 5px 10px;
+        cursor: pointer;
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 4px;
+      }
+      .git-merge-actions button:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .git-merge-actions button.git-merge-pick-primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+      }
+      .git-merge-actions button.git-merge-pick-primary:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
       .merge-header-main {
         display: flex;
         flex-wrap: wrap;
@@ -334,6 +470,21 @@
   </head>
   <body>
     <div id="mergeHeader" class="merge-header" hidden aria-label="Translation merge">
+      <div id="gitMergePanel" class="git-merge-panel" hidden>
+        <h3 class="git-merge-title">Git merge conflicts</h3>
+        <p class="git-merge-hint">
+          Choose <strong>current (ours)</strong> or <strong>incoming (theirs)</strong> per block, or use <strong>Accept all</strong>.
+          Each action saves the file and reloads conflicts so indices stay in sync. The list below is read-only until all
+          conflicts are resolved.
+        </p>
+        <div class="git-merge-toolbar" id="gitMergeToolbar">
+          <button type="button" class="git-merge-pick-primary" id="gitMergeAcceptAllOurs">
+            Accept all current (ours)
+          </button>
+          <button type="button" id="gitMergeAcceptAllTheirs">Accept all incoming (theirs)</button>
+        </div>
+        <div id="gitMergeCards" class="git-merge-cards"></div>
+      </div>
       <div class="merge-header-main">
         <div id="fileStats" class="file-stats" aria-label="Translation file summary"></div>
         <div id="filters" class="filters">

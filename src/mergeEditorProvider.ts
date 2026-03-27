@@ -1,7 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseXlf } from './xlfParser';
+import {
+  applyAllGitConflictResolutions,
+  applyGitConflictResolution,
+  hasGitMergeConflictMarkers,
+  parseXlf
+} from './xlfParser';
 import { serializeXlf } from './xlfSerializer';
 import type { MergeResult, TargetState, TransUnit, XlfDocument } from './types';
 
@@ -335,6 +340,14 @@ async function findAlMatchesByScan(
   }
   const pathHints = buildAlNotePathHints(xliffNote);
   const uris = await vscode.workspace.findFiles(AL_GLOB, AL_EXCLUDE, AL_MAX_FILES_TO_SCAN);
+  const sortedUris = [...uris].sort((a, b) => {
+    const sa = scoreAlPathForHints(a.fsPath, pathHints);
+    const sb = scoreAlPathForHints(b.fsPath, pathHints);
+    if (sb !== sa) {
+      return sb - sa;
+    }
+    return a.fsPath.localeCompare(b.fsPath);
+  });
 
   for (const needle of needles) {
     const batch: Array<{
@@ -344,7 +357,7 @@ async function findAlMatchesByScan(
       previewCol: number;
       pathScore: number;
     }> = [];
-    for (const uri of uris) {
+    for (const uri of sortedUris) {
       if (batch.length >= AL_MAX_MATCHES) {
         break;
       }
@@ -500,6 +513,12 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       if (!working) {
         return;
       }
+      if (hasGitMergeConflictMarkers(document.getText())) {
+        void vscode.window.showWarningMessage(
+          'Resolve all Git merge conflicts in the panel above before editing other trans-units.'
+        );
+        return;
+      }
       const content = serializeXlf(working, asMergeResult(working));
       const endPos = document.positionAt(document.getText().length);
       const edit = new vscode.WorkspaceEdit();
@@ -520,48 +539,91 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       });
     };
 
-    const sendUnits = async (): Promise<void> => {
+    const replaceDocumentAndSave = async (nextContent: string): Promise<void> => {
+      const cur = document.getText();
+      if (cur === nextContent) {
+        return;
+      }
+      const endPos = document.positionAt(cur.length);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(document.uri, new vscode.Range(new vscode.Position(0, 0), endPos), nextContent);
+      applyingEdit = true;
+      try {
+        const applied = await vscode.workspace.applyEdit(edit);
+        if (!applied) {
+          throw new Error('Could not apply edit to the document.');
+        }
+        await vscode.workspace.save(document.uri);
+        ignoreDocRefreshUntil = Date.now() + 900;
+      } finally {
+        applyingEdit = false;
+      }
+      await enqueueSendUnits();
+    };
+
+    let sendUnitsChain: Promise<void> = Promise.resolve();
+
+    const runSendUnits = async (): Promise<void> => {
       webviewPanel.webview.postMessage({
         type: 'loading',
         message: 'Parsing XLF…'
       });
       const text = document.getText();
-      const doc = await parseXlf(text, (n) => {
-        if (n % 2000 === 0) {
-          webviewPanel.webview.postMessage({
-            type: 'loading',
-            message: `Parsing… ${n} units`
+      try {
+        const { document: doc, gitConflicts } = await parseXlf(text, (n) => {
+          if (n % 2000 === 0) {
+            webviewPanel.webview.postMessage({
+              type: 'loading',
+              message: `Parsing… ${n} units`
+            });
+          }
+        });
+        working = cloneXlf(doc);
+
+        const rows: Array<{
+          id: string;
+          source: string;
+          target: string;
+          targetState: string;
+          note: string;
+        }> = [];
+        for (const id of doc.orderedIds) {
+          const u = doc.units.get(id);
+          if (!u) {
+            continue;
+          }
+          rows.push({
+            id: u.id,
+            source: u.source,
+            target: u.target,
+            targetState: u.targetState,
+            note: u.note ?? ''
           });
         }
-      });
-      working = cloneXlf(doc);
 
-      const rows: Array<{
-        id: string;
-        source: string;
-        target: string;
-        targetState: string;
-        note: string;
-      }> = [];
-      for (const id of doc.orderedIds) {
-        const u = doc.units.get(id);
-        if (!u) {
-          continue;
-        }
-        rows.push({
-          id: u.id,
-          source: u.source,
-          target: u.target,
-          targetState: u.targetState,
-          note: u.note ?? ''
+        webviewPanel.webview.postMessage({
+          type: 'units',
+          units: rows,
+          states: [...TARGET_STATES],
+          gitConflicts,
+          editingLocked: gitConflicts.length > 0
         });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        webviewPanel.webview.postMessage({
+          type: 'parseError',
+          message: msg
+        });
+        void vscode.window.showErrorMessage(`BC XLF: ${msg}`);
       }
+    };
 
-      webviewPanel.webview.postMessage({
-        type: 'units',
-        units: rows,
-        states: [...TARGET_STATES]
+    const enqueueSendUnits = (): Promise<void> => {
+      const next = sendUnitsChain.then(() => runSendUnits());
+      sendUnitsChain = next.catch((err) => {
+        console.error(err);
       });
+      return next;
     };
 
     const scheduleRefreshFromDocument = (): void => {
@@ -573,16 +635,56 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       }
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
-        void sendUnits();
+        void enqueueSendUnits();
       }, 350);
     };
 
     webviewPanel.webview.onDidReceiveMessage((msg) => {
       if (msg?.type === 'ready') {
-        void sendUnits();
+        void enqueueSendUnits();
+        return;
+      }
+      if (msg?.type === 'resolveGitConflict') {
+        const idx = typeof msg.index === 'number' ? msg.index : -1;
+        const side = msg.side === 'theirs' || msg.side === 'ours' ? msg.side : undefined;
+        if (idx < 0 || !side) {
+          return;
+        }
+        enqueueApply(async () => {
+          try {
+            const fullText = document.getText();
+            const next = applyGitConflictResolution(fullText, idx, side);
+            await replaceDocumentAndSave(next);
+          } catch (e) {
+            void vscode.window.showErrorMessage(
+              e instanceof Error ? e.message : String(e)
+            );
+          }
+        });
+        return;
+      }
+      if (msg?.type === 'resolveAllGitConflicts') {
+        const side = msg.side === 'theirs' || msg.side === 'ours' ? msg.side : undefined;
+        if (!side) {
+          return;
+        }
+        enqueueApply(async () => {
+          try {
+            const fullText = document.getText();
+            const next = applyAllGitConflictResolutions(fullText, side);
+            await replaceDocumentAndSave(next);
+          } catch (e) {
+            void vscode.window.showErrorMessage(
+              e instanceof Error ? e.message : String(e)
+            );
+          }
+        });
         return;
       }
       if (msg?.type === 'updateUnit' && working) {
+        if (hasGitMergeConflictMarkers(document.getText())) {
+          return;
+        }
         const id = typeof msg.id === 'string' ? msg.id : '';
         const unit = id ? working.units.get(id) : undefined;
         if (!unit) {
@@ -623,9 +725,14 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     });
   }
 
+  private static mergeEditorHtmlTemplate: string | null = null;
+
   private getHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
-    const htmlPath = path.join(this.context.extensionPath, 'webview', 'mergeEditor.html');
-    const raw = fs.readFileSync(htmlPath, 'utf8');
+    if (!MergeEditorProvider.mergeEditorHtmlTemplate) {
+      const htmlPath = path.join(this.context.extensionPath, 'webview', 'mergeEditor.html');
+      MergeEditorProvider.mergeEditorHtmlTemplate = fs.readFileSync(htmlPath, 'utf8');
+    }
+    const raw = MergeEditorProvider.mergeEditorHtmlTemplate;
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource} 'unsafe-inline'`,

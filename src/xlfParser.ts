@@ -4,6 +4,195 @@ import { TransUnit, XlfDocument, TargetState } from './types';
 const PROGRESS_INTERVAL = 500;
 const CHUNK_SIZE = 65536;
 
+/** Standard Git merge conflict: <<<<<<< … / ======= / >>>>>>> */
+const GIT_CONFLICT_BLOCK =
+  /^<<<<<<< .*\r?\n([\s\S]*?)^=======\r?\n([\s\S]*?)^>>>>>>> .*\r?\n/gm;
+
+const TRANS_UNIT_OPEN = /<trans-unit\b[^>]*\bid="([^"]+)"/g;
+
+export type GitConflictSideChoice = 'ours' | 'theirs';
+
+/** One parsed side of a conflict (fragment inside trans-unit). */
+export interface ParsedConflictSide {
+  source: string;
+  target: string;
+  targetState: string;
+}
+
+/** Full region for applying a resolution back into the file buffer. */
+export interface GitConflictRegion {
+  index: number;
+  start: number;
+  end: number;
+  oursRaw: string;
+  theirsRaw: string;
+  transUnitId: string;
+  ours: ParsedConflictSide;
+  theirs: ParsedConflictSide;
+}
+
+/** Payload for the webview merge panel (no byte offsets). */
+export interface GitConflictForWebview {
+  index: number;
+  transUnitId: string;
+  ours: ParsedConflictSide;
+  theirs: ParsedConflictSide;
+}
+
+export interface ParseXlfResult {
+  document: XlfDocument;
+  gitConflicts: GitConflictForWebview[];
+}
+
+/**
+ * Replaces Git merge conflict regions with one side so the result is valid XML.
+ * Raw conflict markers are not valid XML (bare `<` in `<<<<<<<` breaks SAX).
+ */
+export function stripGitMergeConflictMarkers(
+  content: string,
+  prefer: GitConflictSideChoice
+): { text: string; blocks: number } {
+  let blocks = 0;
+  const text = content.replace(GIT_CONFLICT_BLOCK, (_full, ours: string, theirs: string) => {
+    blocks++;
+    return prefer === 'ours' ? ours : theirs;
+  });
+  return { text, blocks };
+}
+
+/** Positions of `<trans-unit id="…">` open tags for O(log n) lookup by byte offset. */
+function buildTransUnitIdIndex(content: string): Array<{ pos: number; id: string }> {
+  const out: Array<{ pos: number; id: string }> = [];
+  const re = new RegExp(TRANS_UNIT_OPEN.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    out.push({ pos: m.index, id: m[1] });
+  }
+  return out;
+}
+
+/** Last trans-unit id whose open tag starts strictly before `offset`. */
+function transUnitIdBeforeOffset(index: Array<{ pos: number; id: string }>, offset: number): string | undefined {
+  let lo = 0;
+  let hi = index.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (index[mid].pos < offset) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo > 0 ? index[lo - 1].id : undefined;
+}
+
+/**
+ * True if the buffer may contain Git conflict markers (cheap scan before full regex analysis).
+ */
+export function hasGitMergeConflictMarkers(content: string): boolean {
+  return content.includes('<<<<<<<');
+}
+
+/**
+ * Best-effort parse of &lt;source&gt; / &lt;target&gt; inside a conflict fragment.
+ */
+export function parseConflictSideFragment(fragment: string): ParsedConflictSide {
+  const sourceMatch = fragment.match(/<source\b[^>]*>([\s\S]*?)<\/source>/i);
+  const targetMatch = fragment.match(/<target\b([^>]*)>([\s\S]*?)<\/target>/i);
+  const source = sourceMatch ? sourceMatch[1] : '';
+  let target = '';
+  let targetState = 'needs-translation';
+  if (targetMatch) {
+    target = targetMatch[2];
+    const st = /(?:^|\s)state\s*=\s*"([^"]*)"/i.exec(targetMatch[1]);
+    if (st) {
+      targetState = st[1];
+    }
+  }
+  return { source, target, targetState };
+}
+
+/**
+ * Finds all Git conflict blocks and parses both sides for the merge UI.
+ */
+export function analyzeGitConflicts(content: string): GitConflictRegion[] {
+  const tuIndex = buildTransUnitIdIndex(content);
+  const re = new RegExp(GIT_CONFLICT_BLOCK.source, GIT_CONFLICT_BLOCK.flags);
+  const out: GitConflictRegion[] = [];
+  let m: RegExpExecArray | null;
+  let index = 0;
+  while ((m = re.exec(content)) !== null) {
+    const full = m[0];
+    const oursRaw = m[1];
+    const theirsRaw = m[2];
+    const start = m.index;
+    const end = start + full.length;
+    const transUnitId = transUnitIdBeforeOffset(tuIndex, start) ?? `unknown-${index}`;
+    out.push({
+      index,
+      start,
+      end,
+      oursRaw,
+      theirsRaw,
+      transUnitId,
+      ours: parseConflictSideFragment(oursRaw),
+      theirs: parseConflictSideFragment(theirsRaw)
+    });
+    index++;
+  }
+  return out;
+}
+
+export function gitConflictsToWebPayload(regions: GitConflictRegion[]): GitConflictForWebview[] {
+  return regions.map((r) => ({
+    index: r.index,
+    transUnitId: r.transUnitId,
+    ours: r.ours,
+    theirs: r.theirs
+  }));
+}
+
+/**
+ * Replaces one conflict block with the chosen side (raw XML fragment, same indentation as in the conflict).
+ */
+export function applyGitConflictResolution(
+  fullText: string,
+  conflictIndex: number,
+  side: GitConflictSideChoice
+): string {
+  const regions = analyzeGitConflicts(fullText);
+  const r = regions[conflictIndex];
+  if (!r) {
+    throw new Error(`No Git conflict at index ${conflictIndex}.`);
+  }
+  const pick = side === 'ours' ? r.oursRaw : r.theirsRaw;
+  return fullText.slice(0, r.start) + pick + fullText.slice(r.end);
+}
+
+/**
+ * Resolves every conflict using the same side in one pass (regions applied last → first so offsets stay valid).
+ */
+export function applyAllGitConflictResolutions(
+  fullText: string,
+  side: GitConflictSideChoice
+): string {
+  const regions = analyzeGitConflicts(fullText);
+  if (regions.length === 0) {
+    return fullText;
+  }
+  const sorted = [...regions].sort((a, b) => b.start - a.start);
+  let text = fullText;
+  for (const r of sorted) {
+    const pick = side === 'ours' ? r.oursRaw : r.theirsRaw;
+    text = text.slice(0, r.start) + pick + text.slice(r.end);
+  }
+  return text;
+}
+
+function hasUnresolvedGitConflictLines(text: string): boolean {
+  return /(^|\n)<<<<<<< /.test(text) || /(^|\n)>>>>>>> /.test(text);
+}
+
 function tagName(name: string): string {
   return name.replace(/^.*:/, '').toLowerCase();
 }
@@ -31,9 +220,28 @@ function isFile(name: string): boolean {
 export async function parseXlf(
   content: string,
   onProgress?: (parsed: number) => void
-): Promise<XlfDocument> {
+): Promise<ParseXlfResult> {
+  let gitConflicts: GitConflictForWebview[];
+  let xmlInput: string;
+
+  if (!hasGitMergeConflictMarkers(content)) {
+    gitConflicts = [];
+    xmlInput = content;
+  } else {
+    const conflictRegions = analyzeGitConflicts(content);
+    gitConflicts = gitConflictsToWebPayload(conflictRegions);
+    const { text: stripped } = stripGitMergeConflictMarkers(content, 'ours');
+    xmlInput = stripped;
+    if (hasUnresolvedGitConflictLines(xmlInput)) {
+      throw new Error(
+        'This file still contains Git conflict markers that could not be parsed as complete conflict blocks. Resolve them in the merge panel or text editor, then try again.'
+      );
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const parser = sax.parser(true, { trim: false, normalize: false });
+    let failed = false;
 
     const doc: XlfDocument = {
       sourceLanguage: '',
@@ -156,11 +364,20 @@ export async function parseXlf(
       }
     };
 
-    parser.onerror = (err) => reject(err);
-    parser.onend = () => resolve(doc);
+    parser.onerror = (err) => {
+      if (!failed) {
+        failed = true;
+        reject(err);
+      }
+    };
+    parser.onend = () => {
+      if (!failed) {
+        resolve({ document: doc, gitConflicts });
+      }
+    };
 
-    if (content.length <= CHUNK_SIZE) {
-      parser.write(content);
+    if (xmlInput.length <= CHUNK_SIZE) {
+      parser.write(xmlInput);
       parser.close();
       return;
     }
@@ -168,7 +385,10 @@ export async function parseXlf(
     let offset = 0;
 
     function writeNextChunk(): void {
-      const chunk = content.slice(offset, offset + CHUNK_SIZE);
+      if (failed) {
+        return;
+      }
+      const chunk = xmlInput.slice(offset, offset + CHUNK_SIZE);
       if (!chunk) {
         parser.close();
         return;
