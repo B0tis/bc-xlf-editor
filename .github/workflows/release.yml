@@ -88,18 +88,27 @@ jobs:
           files: "*.vsix"
           generate_release_notes: true
 
+      # secrets cannot be used in `if:` (GitHub restriction); skip in the shell if unset.
       - name: Publish to Visual Studio Marketplace
-        if: ${{ (github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true') && secrets.VSCE_PAT != '' }}
+        if: ${{ github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "::notice::VSCE_PAT is not set; skipping Visual Studio Marketplace publish."
+            exit 0
+          fi
           VSIX=$(ls -1 ./*.vsix | head -1)
           npx --yes @vscode/vsce publish --packagePath "$VSIX" -p "$VSCE_PAT"
 
       - name: Publish to Open VSX
-        if: ${{ (github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true') && secrets.OPEN_VSX_TOKEN != '' }}
+        if: ${{ github.event.inputs.publish_to_marketplaces == true || github.event.inputs.publish_to_marketplaces == 'true' }}
         env:
           OVSX_PAT: ${{ secrets.OPEN_VSX_TOKEN }}
         run: |
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::notice::OPEN_VSX_TOKEN is not set; skipping Open VSX publish."
+            exit 0
+          fi
           VSIX=$(ls -1 ./*.vsix | head -1)
           npx --yes ovsx publish "$VSIX" -p "$OVSX_PAT"
