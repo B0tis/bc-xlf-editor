@@ -58,6 +58,76 @@ function positionAtOffset(text: string, offset: number): vscode.Position {
   return new vscode.Position(line, character);
 }
 
+function unescapeAlSingleQuotedInner(s: string): string {
+  return s.replace(/''/g, "'");
+}
+
+/**
+ * BC XLF property values are single-quoted AL literals (`'` escaped as `''`).
+ * Returns empty string if the line is not exactly one quoted literal (after trim / optional `;`).
+ */
+function stripSingleQuotedAlLiteral(line: string): string {
+  const t = line.trim().replace(/;\s*$/, '').trim();
+  const m = t.match(/^'((?:''|[^'])*)'$/);
+  if (m) {
+    return unescapeAlSingleQuotedInner(m[1]);
+  }
+  return '';
+}
+
+const PROP_HEAD = /^\s*(Caption|ToolTip|Tooltip|Label)\s*=/i;
+
+/**
+ * BC `<source>` may be a block of Caption / ToolTip / Label lines (`= '…'` or `=` then `'…'` on the next line).
+ * Values are always single-quoted; extract inner text for AL search.
+ */
+function extractPropertyLiteralsFromXlfSource(source: string): string[] {
+  const text = source.replace(/\r\n/g, '\n');
+  const lines = text.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(Caption|ToolTip|Tooltip|Label)\s*=\s*(.*)$/i);
+    if (!m) {
+      continue;
+    }
+    let rest = m[2] ?? '';
+    rest = rest.trim();
+    if (rest.length > 0) {
+      const inner = stripSingleQuotedAlLiteral(rest);
+      if (inner.length >= 1) {
+        out.push(inner);
+      }
+      continue;
+    }
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j].trim();
+      if (next === '') {
+        continue;
+      }
+      if (PROP_HEAD.test(next)) {
+        break;
+      }
+      const inner = stripSingleQuotedAlLiteral(next);
+      if (inner.length >= 1) {
+        out.push(inner);
+      }
+      break;
+    }
+  }
+  return out;
+}
+
+function isJunkSourceFirstLine(line: string): boolean {
+  const t = line.trim();
+  if (t.length < 2) {
+    return true;
+  }
+  if (PROP_HEAD.test(t) && !/=\s*\S/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * BC xliff trans-unit ids are hashes (e.g. "Table 212484631 - Field …"); they do not appear in AL.
  * Jump-to-AL searches AL file text, like NAB's "Find source of current Translation Unit" (F12 in XLF):
@@ -67,14 +137,27 @@ function positionAtOffset(text: string, offset: number): vscode.Position {
  */
 function buildAlSearchNeedles(source: string, xliffNote?: string, target?: string): string[] {
   const needles: string[] = [];
-  const firstLineSource = source.trim().split(/\r?\n/)[0]?.slice(0, 500) ?? '';
-  if (firstLineSource.length >= 2) {
-    needles.push(firstLineSource);
+  const extracted = extractPropertyLiteralsFromXlfSource(source);
+  extracted.sort((a, b) => b.length - a.length);
+  needles.push(...extracted);
+
+  const lines = source.trim().split(/\r?\n/);
+  const firstLineSource = lines[0]?.slice(0, 500) ?? '';
+  if (!extracted.length && firstLineSource.length >= 2 && !isJunkSourceFirstLine(firstLineSource)) {
+    needles.push(firstLineSource.trim());
   }
-  const firstLineTarget = target?.trim().split(/\r?\n/)[0]?.slice(0, 500) ?? '';
+
+  const tgt = target?.trim() ?? '';
+  const extractedTarget = tgt ? extractPropertyLiteralsFromXlfSource(tgt) : [];
+  extractedTarget.sort((a, b) => b.length - a.length);
+  needles.push(...extractedTarget);
+
+  const firstLineTarget = tgt.split(/\r?\n/)[0]?.slice(0, 500) ?? '';
   if (
     firstLineTarget.length >= 2 &&
-    firstLineTarget.toLowerCase() !== firstLineSource.toLowerCase()
+    firstLineTarget.toLowerCase() !== firstLineSource.toLowerCase() &&
+    !extractedTarget.length &&
+    !isJunkSourceFirstLine(firstLineTarget)
   ) {
     needles.push(firstLineTarget);
   }
@@ -100,6 +183,10 @@ function buildAlSearchNeedles(source: string, xliffNote?: string, target?: strin
     const pProp = n.match(/^Page\s+(.+?)\s+-\s+Property\b/i);
     if (pProp?.[1]) {
       needles.push(pProp[1].trim());
+    }
+    const pEx = n.match(/^PageExtension\s+(.+?)\s+-\s+Action\s+/i);
+    if (pEx?.[1]) {
+      needles.push(pEx[1].trim());
     }
     const q = n.match(/^Query\s+(.+?)\s+-\s+/i);
     if (q?.[1]) {
@@ -127,6 +214,59 @@ function buildAlSearchNeedles(source: string, xliffNote?: string, target?: strin
   return out;
 }
 
+/** Tokens from the Xliff Generator note used to prefer AL files (path) when several contain the same literal. */
+function buildAlNotePathHints(xliffNote?: string): string[] {
+  const n = xliffNote?.trim();
+  if (!n) {
+    return [];
+  }
+  const hints: string[] = [];
+  const push = (s: string | undefined): void => {
+    const t = s?.trim();
+    if (t && t.length >= 2) {
+      hints.push(t);
+    }
+  };
+  push(n.match(/^Table\s+(.+?)\s+-\s+(?:Field|Property)\b/i)?.[1]);
+  push(n.match(/^Page\s+(.+?)\s+-\s+(?:Control|Property)\b/i)?.[1]);
+  push(n.match(/^PageExtension\s+(.+?)\s+-\s+Action\s+/i)?.[1]);
+  push(n.match(/^Report\s+(.+?)\s+-\s+/i)?.[1]);
+  push(n.match(/^Query\s+(.+?)\s+-\s+/i)?.[1]);
+  push(n.match(/^XmlPort\s+(.+?)\s+-\s+/i)?.[1]);
+  push(n.match(/^Codeunit\s+(.+?)\s+-\s+/i)?.[1]);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const h of hints) {
+    const k = h.toLowerCase();
+    if (seen.has(k)) {
+      continue;
+    }
+    seen.add(k);
+    out.push(h);
+  }
+  return out;
+}
+
+function scoreAlPathForHints(fsPath: string, hints: string[]): number {
+  if (hints.length === 0) {
+    return 0;
+  }
+  const norm = fsPath.toLowerCase().replace(/\\/g, '/');
+  let score = 0;
+  for (const h of hints) {
+    const compact = h.toLowerCase().replace(/\s+/g, '');
+    const dashed = h.toLowerCase().replace(/\s+/g, '-');
+    if (compact.length >= 3 && norm.includes(compact)) {
+      score += 3;
+    } else if (dashed.length >= 3 && norm.includes(dashed)) {
+      score += 2;
+    } else if (h.length >= 4 && norm.includes(h.toLowerCase())) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
 const AL_GLOB = '**/*.al';
 const AL_EXCLUDE = '**/node_modules/**';
 /** Upper bound for workspace file discovery — avoids missing AL when the project has many .al files. */
@@ -134,49 +274,32 @@ const AL_MAX_FILES_TO_SCAN = 200_000;
 /** Max distinct AL locations offered when many files contain the same caption. */
 const AL_MAX_MATCHES = 48;
 
-/** AL string literal: single quote doubled inside. */
+/** AL single-quoted literal: apostrophe doubled inside (`''`). Captions / ToolTip / Label use only this form. */
 function escapeAlSingleQuotedContent(s: string): string {
   return s.replace(/'/g, "''");
 }
 
-/** AL string literal in double quotes: quote doubled inside. */
-function escapeAlDoubleQuotedContent(s: string): string {
-  return s.replace(/"/g, '""');
-}
-
 /**
- * Match only complete AL string literals, not substrings (e.g. avoid matching `BBE DEV Setup` inside
- * `'BBE DEV Setup Mgt.'`). Tries `'…'` first (captions, labels), then `"…"` (object names).
+ * Match only a complete AL single-quoted literal (`'…'`), not a substring (e.g. avoid matching
+ * `BBE DEV Setup` inside `'BBE DEV Setup Mgt.'`).
  */
 function findStrictAlLiteralNeedleOffset(text: string, needle: string): number {
   if (!needle) {
     return -1;
   }
-  const tryQuoted = (
-    open: string,
-    close: string,
-    escape: (s: string) => string
-  ): number => {
-    const pattern = open + escape(needle) + close;
-    let i = text.indexOf(pattern);
-    if (i >= 0) {
-      return i + open.length;
-    }
-    const tl = text.toLowerCase();
-    const pl = pattern.toLowerCase();
-    i = tl.indexOf(pl);
-    if (i >= 0) {
-      return i + open.length;
-    }
-    return -1;
-  };
-  let off = tryQuoted("'", "'", escapeAlSingleQuotedContent);
-  if (off >= 0) {
-    return off;
+  const open = "'";
+  const close = "'";
+  const escape = escapeAlSingleQuotedContent;
+  const pattern = open + escape(needle) + close;
+  let i = text.indexOf(pattern);
+  if (i >= 0) {
+    return i + open.length;
   }
-  off = tryQuoted('"', '"', escapeAlDoubleQuotedContent);
-  if (off >= 0) {
-    return off;
+  const tl = text.toLowerCase();
+  const pl = pattern.toLowerCase();
+  i = tl.indexOf(pl);
+  if (i >= 0) {
+    return i + open.length;
   }
   return -1;
 }
@@ -204,39 +327,62 @@ async function openAlAtNeedle(uri: vscode.Uri, needle: string): Promise<void> {
 }
 
 async function findAlMatchesByScan(
-  needles: string[]
+  needles: string[],
+  xliffNote?: string
 ): Promise<Array<{ uri: vscode.Uri; needle: string; previewLine: number; previewCol: number }>> {
   if (needles.length === 0) {
     return [];
   }
+  const pathHints = buildAlNotePathHints(xliffNote);
   const uris = await vscode.workspace.findFiles(AL_GLOB, AL_EXCLUDE, AL_MAX_FILES_TO_SCAN);
-  const out: Array<{ uri: vscode.Uri; needle: string; previewLine: number; previewCol: number }> = [];
-  for (const uri of uris) {
-    if (out.length >= AL_MAX_MATCHES) {
-      break;
-    }
-    let bytes: Uint8Array;
-    try {
-      bytes = await vscode.workspace.fs.readFile(uri);
-    } catch {
-      continue;
-    }
-    const text = Buffer.from(bytes).toString('utf8');
-    for (const needle of needles) {
+
+  for (const needle of needles) {
+    const batch: Array<{
+      uri: vscode.Uri;
+      needle: string;
+      previewLine: number;
+      previewCol: number;
+      pathScore: number;
+    }> = [];
+    for (const uri of uris) {
+      if (batch.length >= AL_MAX_MATCHES) {
+        break;
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = await vscode.workspace.fs.readFile(uri);
+      } catch {
+        continue;
+      }
+      const text = Buffer.from(bytes).toString('utf8');
       const idx = findStrictAlLiteralNeedleOffset(text, needle);
       if (idx >= 0) {
         const pos = positionAtOffset(text, idx);
-        out.push({
+        batch.push({
           uri,
           needle,
           previewLine: pos.line + 1,
-          previewCol: pos.character + 1
+          previewCol: pos.character + 1,
+          pathScore: scoreAlPathForHints(uri.fsPath, pathHints)
         });
-        break;
       }
     }
+    if (batch.length > 0) {
+      batch.sort((a, b) => {
+        if (b.pathScore !== a.pathScore) {
+          return b.pathScore - a.pathScore;
+        }
+        return a.uri.fsPath.localeCompare(b.uri.fsPath);
+      });
+      return batch.map(({ uri, needle: ndl, previewLine, previewCol }) => ({
+        uri,
+        needle: ndl,
+        previewLine,
+        previewCol
+      }));
+    }
   }
-  return out;
+  return [];
 }
 
 async function goToAlSource(source: string, xliffNote?: string, target?: string): Promise<void> {
@@ -251,7 +397,7 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
       await vscode.window.showWarningMessage('Nothing to search (empty source).');
       return;
     }
-    const matches = await findAlMatchesByScan(needles);
+    const matches = await findAlMatchesByScan(needles, xliffNote);
     if (matches.length === 0) {
       const primary = needles[0] ?? '';
       await vscode.commands.executeCommand('workbench.action.findInFiles', {
@@ -261,7 +407,7 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
         filesToInclude: '**/*.al'
       });
       await vscode.window.showInformationMessage(
-        'No full quoted caption match in scanned AL files (substrings are ignored). Opened Search — try the Xliff Generator note or a shorter phrase.'
+        'No matching single-quoted caption in scanned AL files (substrings are ignored). Opened Search — try the Xliff Generator note or a shorter phrase.'
       );
       return;
     }

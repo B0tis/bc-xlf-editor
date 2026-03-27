@@ -59,7 +59,7 @@ function renderRow(
   btnAl.className = 'jump-btn';
   btnAl.textContent = 'AL';
   btnAl.title =
-    'Open AL: searches .al files for the source caption, then the translated target if different, plus Xliff Generator note hints (same idea as NAB: AL literals map to source; target helps legacy/localized code).';
+    'Open AL: finds single-quoted strings after Caption / ToolTip / Label in the source (and target), searches those literals in .al files, and uses the Xliff Generator note to rank matches when several files contain the same text.';
   btnAl.addEventListener('click', () => {
     vscode.postMessage({
       type: 'goToAlSource',
