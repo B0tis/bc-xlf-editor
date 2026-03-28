@@ -6,6 +6,8 @@ import { serializeXlf } from './xlfSerializer';
 import { MergeOptions, MergeStats, XlfDocument } from './types';
 import { MergeEditorProvider } from './mergeEditorProvider';
 
+const l10n = vscode.l10n;
+
 let lastStats: MergeStats | undefined;
 
 function countTransUnits(content: string): number {
@@ -41,19 +43,27 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
 
     const config = vscode.workspace.getConfiguration('bcXlf');
 
-    report('Parse Base XLF…');
-    const { document: base } = await parseXlf(baseContent, (parsed) => {
-      if (n > 1000 && parsed % 500 === 0) {
-        report(`Base: ${parsed} units geparst…`);
-      }
-    });
+    report(l10n.t('Parse base XLF…'));
+    const { document: base } = await parseXlf(
+      baseContent,
+      (parsed) => {
+        if (n > 1000 && parsed % 500 === 0) {
+          report(l10n.t('Base: {0} units parsed…', parsed));
+        }
+      },
+      { forceFullParse: true }
+    );
 
-    report('Parse Custom XLF…');
-    const { document: custom } = await parseXlf(customContent, (parsed) => {
-      if (n > 1000 && parsed % 500 === 0) {
-        report(`Custom: ${parsed} units geparst…`);
-      }
-    });
+    report(l10n.t('Parse custom XLF…'));
+    const { document: custom } = await parseXlf(
+      customContent,
+      (parsed) => {
+        if (n > 1000 && parsed % 500 === 0) {
+          report(l10n.t('Custom: {0} units parsed…', parsed));
+        }
+      },
+      { forceFullParse: true }
+    );
 
     const options: MergeOptions = {
       strategy: config.get('defaultStrategy', 'keep-translated'),
@@ -61,38 +71,45 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       preserveRemoved: config.get('preserveRemoved', false)
     };
 
-    report('Merge…');
+    report(l10n.t('Merge…'));
     const result = mergeXlf(base, custom, options);
 
-    report('Serialisiere…');
+    report(l10n.t('Serialize…'));
     const header = buildOutputHeader(base, custom);
     const output = serializeXlf(header, result);
 
     await fs.writeFile(customUri.fsPath, output, { encoding: 'utf-8' });
     lastStats = result.stats;
 
-    report('Gespeichert.');
+    report(l10n.t('Saved.'));
 
     const { stats } = result;
-    const msg = `Merge fertig: +${stats.added.length} neu · ${stats.conflicts.length} Konflikte · −${stats.removed.length} entfernt`;
+    const msg = l10n.t(
+      'Merge complete: +{0} new · {1} conflicts · −{2} removed',
+      stats.added.length,
+      stats.conflicts.length,
+      stats.removed.length
+    );
 
     const openDiff = config.get('openDiffAfterMerge', true);
     if (openDiff) {
       try {
         await vscode.commands.executeCommand('git.openChange', customUri);
       } catch {
-        /* Git-Erweiterung nicht aktiv */
+        /* Git extension not active */
       }
     }
 
-    const action = await vscode.window.showInformationMessage(msg, 'Git-Diff öffnen', 'Details');
-    if (action === 'Git-Diff öffnen') {
+    const labelOpenDiff = l10n.t('Open Git diff');
+    const labelDetails = l10n.t('Details');
+    const action = await vscode.window.showInformationMessage(msg, labelOpenDiff, labelDetails);
+    if (action === labelOpenDiff) {
       try {
         await vscode.commands.executeCommand('git.openChange', customUri);
       } catch {
-        await vscode.window.showWarningMessage('Git-Diff konnte nicht geöffnet werden.');
+        await vscode.window.showWarningMessage(l10n.t('Could not open Git diff.'));
       }
-    } else if (action === 'Details') {
+    } else if (action === labelDetails) {
       await vscode.commands.executeCommand('bcXlf.showSummary');
     }
   };
@@ -101,7 +118,7 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'BC XLF Editor',
+        title: l10n.t('BC XLF Editor'),
         cancellable: false
       },
       async (progress) => {
@@ -127,11 +144,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('bcXlf.merge', async () => {
-      const baseUri = await pickFile('Base XLF wählen (.g.xlf)');
+      const baseUri = await pickFile(l10n.t('Pick base XLF (.g.xlf)'));
       if (!baseUri) {
         return;
       }
-      const customUri = await pickFile('Custom XLF wählen (Übersetzung)');
+      const customUri = await pickFile(l10n.t('Pick custom XLF (translation)'));
       if (!customUri) {
         return;
       }
@@ -141,11 +158,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('bcXlf.mergeFromContext', async (uri?: vscode.Uri) => {
-      const customUri = uri ?? (await pickFile('Custom XLF wählen (Übersetzung)'));
+      const customUri = uri ?? (await pickFile(l10n.t('Pick custom XLF (translation)')));
       if (!customUri) {
         return;
       }
-      const baseUri = await pickFile('Base XLF wählen (.g.xlf)');
+      const baseUri = await pickFile(l10n.t('Pick base XLF (.g.xlf)'));
       if (!baseUri) {
         return;
       }
@@ -156,27 +173,29 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('bcXlf.showSummary', async () => {
       if (!lastStats) {
-        await vscode.window.showInformationMessage('Noch kein Merge in dieser Session ausgeführt.');
+        await vscode.window.showInformationMessage(
+          l10n.t('No merge has been run in this session yet.')
+        );
         return;
       }
       const s = lastStats;
       const doc = await vscode.workspace.openTextDocument({
         content: [
-          'BC XLF Editor — Statistik',
+          l10n.t('BC XLF Editor — statistics'),
           '',
-          `Gesamt: ${s.total}`,
-          `Unverändert: ${s.unchanged}`,
-          `Neu (nur Base): ${s.added.length}`,
-          `Konflikte (Source geändert): ${s.conflicts.length}`,
-          `Entfernt (nur Custom): ${s.removed.length}`,
+          l10n.t('Total: {0}', s.total),
+          l10n.t('Unchanged: {0}', s.unchanged),
+          l10n.t('New (base only): {0}', s.added.length),
+          l10n.t('Conflicts (source changed): {0}', s.conflicts.length),
+          l10n.t('Removed (custom only): {0}', s.removed.length),
           '',
-          '— Neu —',
+          l10n.t('— New —'),
           ...s.added.map((id) => `  ${id}`),
           '',
-          '— Konflikte —',
+          l10n.t('— Conflicts —'),
           ...s.conflicts.map((id) => `  ${id}`),
           '',
-          '— Entfernt —',
+          l10n.t('— Removed —'),
           ...s.removed.map((id) => `  ${id}`)
         ].join('\n'),
         language: 'plaintext'
@@ -191,7 +210,7 @@ export function deactivate(): void {}
 async function pickFile(title: string): Promise<vscode.Uri | undefined> {
   const result = await vscode.window.showOpenDialog({
     title,
-    filters: { 'XLF Files': ['xlf'] },
+    filters: { [l10n.t('XLF files')]: ['xlf'] },
     canSelectMany: false
   });
   return result?.[0];

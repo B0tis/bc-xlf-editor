@@ -1,0 +1,16 @@
+{
+  "extension.displayName": "BC XLF Editor",
+  "extension.description": "Merge Business Central XLF translation files — fast, git-diff friendly",
+  "customEditor.displayName": "BC XLF Editor",
+  "command.merge.title": "BC XLF: Merge Translation Files",
+  "command.showSummary.title": "BC XLF: Show Last Merge Summary",
+  "config.title": "BC XLF Editor",
+  "config.defaultStrategy.description": "Merge strategy when the source text changed",
+  "config.sortById.description": "Sort trans-units by ID alphabetically (stable Git diffs)",
+  "config.preserveRemoved.description": "Keep removed units as needs-review instead of deleting",
+  "config.openDiffAfterMerge.description": "Open Git diff after merge automatically",
+  "config.defaultStrategy.enum.keepTranslated": "Keep translated target when source changed",
+  "config.defaultStrategy.enum.preferSource": "Prefer new source text (mark for review)",
+  "config.defaultStrategy.enumDescription.keepTranslated": "Keep the existing translation when the source string changed.",
+  "config.defaultStrategy.enumDescription.preferSource": "Adopt the new source and mark the unit for review."
+}

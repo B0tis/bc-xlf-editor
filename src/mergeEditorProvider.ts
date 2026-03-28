@@ -1,13 +1,18 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getWebviewUiStrings } from './webviewUiStrings';
+
+const l10n = vscode.l10n;
 import {
   applyAllGitConflictResolutions,
   applyGitConflictResolution,
+  buildTransUnitSpanIndex,
+  countTransUnitsInBuffer,
   hasGitMergeConflictMarkers,
   parseXlf
 } from './xlfParser';
-import { serializeXlf } from './xlfSerializer';
+import { serializeTransUnit, serializeXlf } from './xlfSerializer';
 import type { MergeResult, TargetState, TransUnit, XlfDocument } from './types';
 
 const TARGET_STATES: readonly TargetState[] = [
@@ -45,6 +50,99 @@ function asMergeResult(doc: XlfDocument): MergeResult {
       unchanged: doc.units.size
     }
   };
+}
+
+interface UnitRow {
+  id: string;
+  source: string;
+  target: string;
+  targetState: string;
+  note: string;
+}
+
+interface FileStatsPayload {
+  total: number;
+  needsTranslation: number;
+  emptyTarget: number;
+  needsReview: number;
+  needsAdaptation: number;
+  translated: number;
+  final: number;
+  otherState: number;
+}
+
+function buildRowsFromWorking(doc: XlfDocument): UnitRow[] {
+  const rows: UnitRow[] = [];
+  for (const id of doc.orderedIds) {
+    const u = doc.units.get(id);
+    if (!u) {
+      continue;
+    }
+    rows.push({
+      id: u.id,
+      source: u.source,
+      target: u.target,
+      targetState: u.targetState,
+      note: u.note ?? ''
+    });
+  }
+  return rows;
+}
+
+function filterRows(rows: UnitRow[], states: Set<string> | null, textQ: string): UnitRow[] {
+  let out = rows;
+  if (states && states.size > 0) {
+    out = out.filter((u) => states.has(u.targetState));
+  }
+  const q = textQ.trim().toLowerCase();
+  if (!q) {
+    return out;
+  }
+  return out.filter(
+    (u) =>
+      u.id.toLowerCase().includes(q) ||
+      u.source.toLowerCase().includes(q) ||
+      u.target.toLowerCase().includes(q)
+  );
+}
+
+function computeFileStatsFromWorking(doc: XlfDocument): FileStatsPayload {
+  const s: FileStatsPayload = {
+    total: doc.units.size,
+    needsTranslation: 0,
+    emptyTarget: 0,
+    needsReview: 0,
+    needsAdaptation: 0,
+    translated: 0,
+    final: 0,
+    otherState: 0
+  };
+  for (const u of doc.units.values()) {
+    if (!u.target.trim()) {
+      s.emptyTarget++;
+    }
+    switch (u.targetState) {
+      case 'needs-translation':
+        s.needsTranslation++;
+        break;
+      case 'needs-review-translation':
+        s.needsReview++;
+        break;
+      case 'needs-adaptation':
+        s.needsAdaptation++;
+        break;
+      case 'translated':
+        s.translated++;
+        break;
+      case 'final':
+        s.final++;
+        break;
+      default:
+        s.otherState++;
+        break;
+    }
+  }
+  return s;
 }
 
 function parseTargetState(value: unknown): TargetState | undefined {
@@ -320,7 +418,9 @@ async function openAlAtNeedle(uri: vscode.Uri, needle: string): Promise<void> {
   if (idx < 0) {
     await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside });
     await vscode.window.showWarningMessage(
-      'Found this AL file while scanning but could not re-locate the text in the editor (encoding or line endings). Try Search or a shorter caption.'
+      l10n.t(
+        'Found this AL file while scanning but could not re-locate the text in the editor (encoding or line endings). Try Search or a shorter caption.'
+      )
     );
     return;
   }
@@ -402,12 +502,12 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
   try {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) {
-      await vscode.window.showInformationMessage('Open a workspace to search AL files.');
+      await vscode.window.showInformationMessage(l10n.t('Open a workspace to search AL files.'));
       return;
     }
     const needles = buildAlSearchNeedles(source, xliffNote, target);
     if (needles.length === 0) {
-      await vscode.window.showWarningMessage('Nothing to search (empty source).');
+      await vscode.window.showWarningMessage(l10n.t('Nothing to search (empty source).'));
       return;
     }
     const matches = await findAlMatchesByScan(needles, xliffNote);
@@ -420,7 +520,9 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
         filesToInclude: '**/*.al'
       });
       await vscode.window.showInformationMessage(
-        'No matching single-quoted caption in scanned AL files (substrings are ignored). Opened Search — try the Xliff Generator note or a shorter phrase.'
+        l10n.t(
+          'No matching single-quoted caption in scanned AL files (substrings are ignored). Opened Search — try the Xliff Generator note or a shorter phrase.'
+        )
       );
       return;
     }
@@ -434,14 +536,14 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
         description: `${m.previewLine}:${m.previewCol}`,
         m
       })),
-      { placeHolder: 'Multiple AL matches — pick one' }
+      { placeHolder: l10n.t('Multiple AL matches — pick one') }
     );
     if (picked) {
       await openAlAtNeedle(picked.m.uri, picked.m.needle);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await vscode.window.showErrorMessage(`Jump to AL failed: ${msg}`);
+    await vscode.window.showErrorMessage(l10n.t('Jump to AL failed: {0}', msg));
   }
 }
 
@@ -466,7 +568,9 @@ async function revealTransUnitInTextEditor(document: vscode.TextDocument, id: st
   }
   if (idx < 0) {
     await vscode.window.showWarningMessage(
-      'Could not find this trans-unit in the XML. If the file changed on disk, reload the editor.'
+      l10n.t(
+        'Could not find this trans-unit in the XML. If the file changed on disk, reload the editor.'
+      )
     );
     return;
   }
@@ -503,19 +607,43 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview, scriptUri);
 
     let working: XlfDocument | null = null;
+    let unitSpans = new Map<string, { start: number; end: number }>();
+    let lastFilter: { states: Set<string> | null; text: string } = { states: null, text: '' };
     let applyingEdit = false;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let applyQueue: Promise<void> = Promise.resolve();
     /** Skip document-driven refresh right after we rewrote the buffer (avoids list flicker / focus loss). */
     let ignoreDocRefreshUntil = 0;
 
-    const applyWorkingToDocument = async (): Promise<void> => {
+    const postFilteredUnitsToWebview = (): void => {
+      if (!working) {
+        return;
+      }
+      const rows = buildRowsFromWorking(working);
+      const filtered = filterRows(rows, lastFilter.states, lastFilter.text);
+      const stats = computeFileStatsFromWorking(working);
+      webviewPanel.webview.postMessage({
+        type: 'units',
+        units: filtered,
+        totalCount: rows.length,
+        matchCount: filtered.length,
+        fileStats: stats,
+        states: [...TARGET_STATES],
+        gitConflicts: [],
+        editingLocked: false,
+        viewMode: 'editor'
+      });
+    };
+
+    const applyWorkingFullReplace = async (): Promise<void> => {
       if (!working) {
         return;
       }
       if (hasGitMergeConflictMarkers(document.getText())) {
         void vscode.window.showWarningMessage(
-          'Resolve all Git merge conflicts in the panel above before editing other trans-units.'
+          l10n.t(
+            'Resolve all Git merge conflicts in the panel above before editing other trans-units.'
+          )
         );
         return;
       }
@@ -527,15 +655,55 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       try {
         await vscode.workspace.applyEdit(edit);
         ignoreDocRefreshUntil = Date.now() + 900;
+        unitSpans = buildTransUnitSpanIndex(document.getText());
       } finally {
         applyingEdit = false;
       }
     };
 
+    const applyPartialOrFull = async (unitId: string): Promise<void> => {
+      if (!working) {
+        return;
+      }
+      if (hasGitMergeConflictMarkers(document.getText())) {
+        return;
+      }
+      const unit = working.units.get(unitId);
+      if (!unit) {
+        return;
+      }
+      const buffer = document.getText();
+      const span = unitSpans.get(unitId);
+      if (span) {
+        const slice = buffer.slice(span.start, span.end);
+        if (slice.includes(`id="${unit.id}"`)) {
+          const fragment = serializeTransUnit(unit);
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(
+            document.uri,
+            new vscode.Range(document.positionAt(span.start), document.positionAt(span.end)),
+            fragment
+          );
+          applyingEdit = true;
+          try {
+            const ok = await vscode.workspace.applyEdit(edit);
+            if (ok) {
+              ignoreDocRefreshUntil = Date.now() + 900;
+              unitSpans = buildTransUnitSpanIndex(document.getText());
+              return;
+            }
+          } finally {
+            applyingEdit = false;
+          }
+        }
+      }
+      await applyWorkingFullReplace();
+    };
+
     const enqueueApply = (fn: () => Promise<void>): void => {
       applyQueue = applyQueue.then(fn).catch((err) => {
         console.error(err);
-        void vscode.window.showErrorMessage(`XLF update failed: ${String(err)}`);
+        void vscode.window.showErrorMessage(l10n.t('XLF update failed: {0}', String(err)));
       });
     };
 
@@ -566,7 +734,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     const runSendUnits = async (): Promise<void> => {
       webviewPanel.webview.postMessage({
         type: 'loading',
-        message: 'Parsing XLF…'
+        message: l10n.t('Parsing XLF…')
       });
       const text = document.getText();
       try {
@@ -574,47 +742,37 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           if (n % 2000 === 0) {
             webviewPanel.webview.postMessage({
               type: 'loading',
-              message: `Parsing… ${n} units`
+              message: l10n.t('Parsing… {0} units', n)
             });
           }
         });
-        working = cloneXlf(doc);
-
-        const rows: Array<{
-          id: string;
-          source: string;
-          target: string;
-          targetState: string;
-          note: string;
-        }> = [];
-        for (const id of doc.orderedIds) {
-          const u = doc.units.get(id);
-          if (!u) {
-            continue;
-          }
-          rows.push({
-            id: u.id,
-            source: u.source,
-            target: u.target,
-            targetState: u.targetState,
-            note: u.note ?? ''
+        if (gitConflicts.length > 0) {
+          working = null;
+          unitSpans = new Map();
+          const totalCount = countTransUnitsInBuffer(text);
+          webviewPanel.webview.postMessage({
+            type: 'units',
+            units: [],
+            totalCount,
+            matchCount: 0,
+            fileStats: null,
+            states: [...TARGET_STATES],
+            gitConflicts,
+            editingLocked: true,
+            viewMode: 'conflictsOnly'
           });
+          return;
         }
-
-        webviewPanel.webview.postMessage({
-          type: 'units',
-          units: rows,
-          states: [...TARGET_STATES],
-          gitConflicts,
-          editingLocked: gitConflicts.length > 0
-        });
+        working = cloneXlf(doc);
+        unitSpans = buildTransUnitSpanIndex(text);
+        postFilteredUnitsToWebview();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         webviewPanel.webview.postMessage({
           type: 'parseError',
           message: msg
         });
-        void vscode.window.showErrorMessage(`BC XLF: ${msg}`);
+        void vscode.window.showErrorMessage(l10n.t('BC XLF: {0}', msg));
       }
     };
 
@@ -642,6 +800,18 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel.webview.onDidReceiveMessage((msg) => {
       if (msg?.type === 'ready') {
         void enqueueSendUnits();
+        return;
+      }
+      if (msg?.type === 'filterChanged') {
+        const states = Array.isArray(msg.states) ? (msg.states as string[]) : [];
+        const text = typeof msg.text === 'string' ? msg.text : '';
+        lastFilter = {
+          states: states.length > 0 ? new Set(states) : null,
+          text
+        };
+        if (working && !hasGitMergeConflictMarkers(document.getText())) {
+          postFilteredUnitsToWebview();
+        }
         return;
       }
       if (msg?.type === 'resolveGitConflict') {
@@ -697,7 +867,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           target: nextTarget,
           targetState: nextState
         });
-        enqueueApply(applyWorkingToDocument);
+        enqueueApply(() => applyPartialOrFull(id));
         return;
       }
       if (msg?.type === 'goToAlSource' && typeof msg.source === 'string') {
@@ -739,6 +909,12 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       `font-src ${webview.cspSource}`,
       `script-src ${webview.cspSource}`
     ].join('; ');
-    return raw.replace('{{CSP}}', csp).replace('{{SCRIPT_URI}}', scriptUri.toString());
+    const uiJson = JSON.stringify(getWebviewUiStrings()).replace(/</g, '\\u003c');
+    const lang = vscode.env.language.toLowerCase().startsWith('de') ? 'de' : 'en';
+    return raw
+      .replace('{{CSP}}', csp)
+      .replace('{{SCRIPT_URI}}', scriptUri.toString())
+      .replace('{{BCXLF_UI_JSON}}', uiJson)
+      .replace('{{HTML_LANG}}', lang);
   }
 }

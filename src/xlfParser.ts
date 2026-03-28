@@ -217,10 +217,75 @@ function isFile(name: string): boolean {
   return tagName(name) === 'file';
 }
 
+function emptyXlfDocument(): XlfDocument {
+  return {
+    sourceLanguage: '',
+    targetLanguage: '',
+    original: '',
+    datatype: 'xml',
+    units: new Map(),
+    orderedIds: []
+  };
+}
+
+export interface ParseXlfOptions {
+  /** Merge / CLI: always run full SAX even when Git conflict markers are present. */
+  forceFullParse?: boolean;
+}
+
+/** Count `<trans-unit` open tags (cheap; used for conflict-only UI totals). */
+export function countTransUnitsInBuffer(content: string): number {
+  const re = /<trans-unit\b/gi;
+  let n = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Byte offsets of each `<trans-unit …>…</trans-unit>` in the current buffer (for partial edits).
+ * Assumes trans-units are not nested (BC XLF).
+ */
+export function buildTransUnitSpanIndex(content: string): Map<string, { start: number; end: number }> {
+  const map = new Map<string, { start: number; end: number }>();
+  const re = /<trans-unit\b[^>]*\bid="([^"]+)"[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    const id = m[1];
+    const start = m.index;
+    const afterOpen = m.index + m[0].length;
+    const closeIdx = content.indexOf('</trans-unit>', afterOpen);
+    if (closeIdx < 0) {
+      continue;
+    }
+    const end = closeIdx + '</trans-unit>'.length;
+    map.set(id, { start, end });
+  }
+  return map;
+}
+
 export async function parseXlf(
   content: string,
-  onProgress?: (parsed: number) => void
+  onProgress?: (parsed: number) => void,
+  options?: ParseXlfOptions
 ): Promise<ParseXlfResult> {
+  if (!options?.forceFullParse && hasGitMergeConflictMarkers(content)) {
+    const conflictRegions = analyzeGitConflicts(content);
+    const gitConflicts = gitConflictsToWebPayload(conflictRegions);
+    const { text: stripped } = stripGitMergeConflictMarkers(content, 'ours');
+    if (hasUnresolvedGitConflictLines(stripped)) {
+      throw new Error(
+        'This file still contains Git conflict markers that could not be parsed as complete conflict blocks. Resolve them in the merge panel or text editor, then try again.'
+      );
+    }
+    return Promise.resolve({
+      document: emptyXlfDocument(),
+      gitConflicts
+    });
+  }
+
   let gitConflicts: GitConflictForWebview[];
   let xmlInput: string;
 

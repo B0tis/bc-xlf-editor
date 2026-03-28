@@ -57,6 +57,13 @@ function appendTransUnit(parts: string[], unit: TransUnit): void {
   parts.push(`${INDENT.repeat(3)}</trans-unit>\n`);
 }
 
+/** One trans-unit block, same canonical shape as {@link serializeXlf} (for partial buffer replace). */
+export function serializeTransUnit(unit: TransUnit): string {
+  const parts: string[] = [];
+  appendTransUnit(parts, unit);
+  return parts.join('');
+}
+
 function buildTransUnitOpen(unit: TransUnit): string {
   const base =
     `<trans-unit id="${esc(unit.id)}" ` +

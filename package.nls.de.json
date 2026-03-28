@@ -1,0 +1,16 @@
+{
+  "extension.displayName": "BC XLF-Editor",
+  "extension.description": "Business Central-XLF-Übersetzungsdateien zusammenführen — schnell und git-diff-freundlich",
+  "customEditor.displayName": "BC XLF-Editor",
+  "command.merge.title": "BC XLF: Übersetzungsdateien zusammenführen",
+  "command.showSummary.title": "BC XLF: Letzte Merge-Zusammenfassung anzeigen",
+  "config.title": "BC XLF-Editor",
+  "config.defaultStrategy.description": "Merge-Strategie bei geänderter Quelle",
+  "config.sortById.description": "Trans-Units alphabetisch nach ID sortieren (stabiler Git-Diff)",
+  "config.preserveRemoved.description": "Entfernte Units als needs-review behalten statt löschen",
+  "config.openDiffAfterMerge.description": "Git-Diff nach Merge automatisch öffnen",
+  "config.defaultStrategy.enum.keepTranslated": "Übersetzung behalten, wenn Quelle geändert wurde",
+  "config.defaultStrategy.enum.preferSource": "Neue Quelle bevorzugen (zur Prüfung markieren)",
+  "config.defaultStrategy.enumDescription.keepTranslated": "Bestehende Übersetzung behalten, wenn sich der Quelltext geändert hat.",
+  "config.defaultStrategy.enumDescription.preferSource": "Neue Quelle übernehmen und die Unit zur Prüfung markieren."
+}

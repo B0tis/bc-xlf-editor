@@ -1,8 +1,8 @@
 {
   "name": "bc-xlf-editor",
   "publisher": "B0tis",
-  "displayName": "BC XLF Editor",
-  "description": "Merge Business Central XLF translation files — fast, git-diff friendly",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,11 +22,12 @@
     "workspaceContains:**/*.xlf"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "customEditors": [
       {
         "viewType": "bcXlf.mergeEditor",
-        "displayName": "BC XLF Editor",
+        "displayName": "%customEditor.displayName%",
         "selector": [
           {
             "filenamePattern": "*.xlf"
@@ -38,15 +39,15 @@
     "commands": [
       {
         "command": "bcXlf.merge",
-        "title": "BC XLF: Merge Translation Files"
+        "title": "%command.merge.title%"
       },
       {
         "command": "bcXlf.mergeFromContext",
-        "title": "BC XLF: Merge Translation Files"
+        "title": "%command.merge.title%"
       },
       {
         "command": "bcXlf.showSummary",
-        "title": "BC XLF: Show Last Merge Summary"
+        "title": "%command.showSummary.title%"
       }
     ],
     "menus": {
@@ -66,7 +67,7 @@
       ]
     },
     "configuration": {
-      "title": "BC XLF Editor",
+      "title": "%config.title%",
       "properties": {
         "bcXlf.defaultStrategy": {
           "type": "string",
@@ -75,22 +76,30 @@
             "keep-translated",
             "prefer-source"
           ],
-          "description": "Merge-Strategie bei geänderter Source"
+          "enumItemLabels": [
+            "%config.defaultStrategy.enum.keepTranslated%",
+            "%config.defaultStrategy.enum.preferSource%"
+          ],
+          "enumDescriptions": [
+            "%config.defaultStrategy.enumDescription.keepTranslated%",
+            "%config.defaultStrategy.enumDescription.preferSource%"
+          ],
+          "description": "%config.defaultStrategy.description%"
         },
         "bcXlf.sortById": {
           "type": "boolean",
           "default": true,
-          "description": "Trans-units alphabetisch nach ID sortieren (stabiler Git-Diff)"
+          "description": "%config.sortById.description%"
         },
         "bcXlf.preserveRemoved": {
           "type": "boolean",
           "default": false,
-          "description": "Entfernte Units als needs-review behalten statt löschen"
+          "description": "%config.preserveRemoved.description%"
         },
         "bcXlf.openDiffAfterMerge": {
           "type": "boolean",
           "default": true,
-          "description": "Git-Diff nach Merge automatisch öffnen"
+          "description": "%config.openDiffAfterMerge.description%"
         }
       }
     }

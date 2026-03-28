@@ -48,9 +48,3 @@ pnpm run vsix
 ```
 
 Install locally: **Extensions** → **⋯** → **Install from VSIX…**, or `code --install-extension <path-to-vsix>`.
-
-## Release notes
-
-### 0.0.1
-
-Initial published build: merge command, custom merge editor view, SAX-based parser, stable serializer.

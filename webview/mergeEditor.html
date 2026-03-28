@@ -1,11 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{HTML_LANG}}">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="{{CSP}}" />
     <style>
       * {
         box-sizing: border-box;
+      }
+      /* 100% fills the webview iframe; avoid 100vh — it tracks the window, not the editor pane */
+      html {
+        height: 100%;
+        width: 100%;
       }
       body {
         margin: 0;
@@ -16,10 +21,13 @@
         background: var(--vscode-editor-background);
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
       }
       .merge-header {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -32,8 +40,18 @@
       .merge-header[hidden] {
         display: none !important;
       }
+      .editor-shell {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .editor-shell[hidden] {
+        display: none !important;
+      }
       .git-merge-panel {
-        flex: 1 1 100%;
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 8px;
@@ -87,11 +105,13 @@
         opacity: 0.85;
         line-height: 1.35;
       }
+      /* Fills remaining height in the panel; scrolls when there are many conflicts (no fixed cap). */
       .git-merge-cards {
         display: flex;
         flex-direction: column;
         gap: 10px;
-        max-height: min(42vh, 420px);
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
       }
       .git-merge-card {
@@ -285,7 +305,8 @@
         background: var(--vscode-button-secondaryHoverBackground);
       }
       .filter-hint {
-        flex: 1 1 100%;
+        flex: 0 0 auto;
+        align-self: stretch;
         font-size: 9px;
         opacity: 0.72;
         margin: 0;
@@ -469,61 +490,55 @@
     </style>
   </head>
   <body>
-    <div id="mergeHeader" class="merge-header" hidden aria-label="Translation merge">
+    <div id="mergeHeader" class="merge-header" hidden aria-label="">
       <div id="gitMergePanel" class="git-merge-panel" hidden>
-        <h3 class="git-merge-title">Git merge conflicts</h3>
-        <p class="git-merge-hint">
-          Choose <strong>current (ours)</strong> or <strong>incoming (theirs)</strong> per block, or use <strong>Accept all</strong>.
-          Each action saves the file and reloads conflicts so indices stay in sync. The list below is read-only until all
-          conflicts are resolved.
-        </p>
+        <h3 id="gitMergeTitle" class="git-merge-title"></h3>
+        <p id="gitMergeHint" class="git-merge-hint"></p>
         <div class="git-merge-toolbar" id="gitMergeToolbar">
-          <button type="button" class="git-merge-pick-primary" id="gitMergeAcceptAllOurs">
-            Accept all current (ours)
-          </button>
-          <button type="button" id="gitMergeAcceptAllTheirs">Accept all incoming (theirs)</button>
+          <button type="button" class="git-merge-pick-primary" id="gitMergeAcceptAllOurs"></button>
+          <button type="button" id="gitMergeAcceptAllTheirs"></button>
         </div>
         <div id="gitMergeCards" class="git-merge-cards"></div>
       </div>
-      <div class="merge-header-main">
-        <div id="fileStats" class="file-stats" aria-label="Translation file summary"></div>
-        <div id="filters" class="filters">
-          <div class="filter-field filter-state-wrap">
-            <label id="stateFilterLabel">States</label>
-            <div class="state-dd" id="stateDd">
-              <button type="button" class="state-dd-toggle" id="stateDdToggle" aria-expanded="false" aria-haspopup="true">
-                <span class="state-dd-summary" id="stateDdSummary">All states</span>
-                <span class="state-dd-caret" aria-hidden="true">▾</span>
-              </button>
-              <div class="state-dd-panel" id="stateDdPanel" hidden role="group" aria-labelledby="stateFilterLabel">
-                <p class="state-dd-hint">Leave all unchecked to show every state. Check one or more to list rows in any of those states.</p>
-                <div id="stateDdList"></div>
+      <div id="editorShell" class="editor-shell" hidden>
+        <div class="merge-header-main">
+          <div id="fileStats" class="file-stats" aria-label=""></div>
+          <div id="filters" class="filters">
+            <div class="filter-field filter-state-wrap">
+              <label id="stateFilterLabel"></label>
+              <div class="state-dd" id="stateDd">
+                <button type="button" class="state-dd-toggle" id="stateDdToggle" aria-expanded="false" aria-haspopup="true">
+                  <span class="state-dd-summary" id="stateDdSummary"></span>
+                  <span class="state-dd-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="state-dd-panel" id="stateDdPanel" hidden role="group" aria-labelledby="stateFilterLabel">
+                  <p id="stateDdHint" class="state-dd-hint"></p>
+                  <div id="stateDdList"></div>
+                </div>
               </div>
             </div>
+            <div class="filter-field filter-grow">
+              <label id="filterSearchLabel" for="filterText"></label>
+              <input
+                type="search"
+                id="filterText"
+                class="filter-text"
+                placeholder=""
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+            <button type="button" id="filterClear" class="filter-clear"></button>
           </div>
-          <div class="filter-field filter-grow">
-            <label for="filterText">Search id, source, or target</label>
-            <input
-              type="search"
-              id="filterText"
-              class="filter-text"
-              placeholder="Type to filter rows…"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </div>
-          <button type="button" id="filterClear" class="filter-clear">Clear</button>
+        </div>
+        <p id="filterHint" class="filter-hint"></p>
+        <div id="status"></div>
+        <div id="viewport">
+          <div id="spacer"></div>
         </div>
       </div>
-      <p class="filter-hint">
-        BC XLF trans-unit ids are compiler hashes (they do not match AL object names). Use <strong>AL</strong> to find
-        captions in <code>*.al</code> (source text + Xliff note hints). Use <strong>XLF</strong> to jump to the XML.
-      </p>
     </div>
-    <div id="status">Loading…</div>
-    <div id="viewport">
-      <div id="spacer"></div>
-    </div>
+    <script type="application/json" id="bcxlf-ui-json">{{BCXLF_UI_JSON}}</script>
     <script src="{{SCRIPT_URI}}"></script>
   </body>
 </html>
