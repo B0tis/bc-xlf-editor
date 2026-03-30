@@ -9,10 +9,13 @@ import {
   applyGitConflictResolution,
   buildTransUnitSpanIndex,
   countTransUnitsInBuffer,
+  findTransUnitIdAtOffset,
   hasGitMergeConflictMarkers,
   parseXlf
 } from './xlfParser';
+import { translateWithDeepL } from './deepl';
 import { serializeTransUnit, serializeXlf } from './xlfSerializer';
+import { applyTransUnitDiffSurgically } from './xlfSurgicalMerge';
 import type { MergeResult, TargetState, TransUnit, XlfDocument } from './types';
 
 const TARGET_STATES: readonly TargetState[] = [
@@ -89,8 +92,16 @@ function buildRowsFromWorking(doc: XlfDocument): UnitRow[] {
   return rows;
 }
 
-function filterRows(rows: UnitRow[], states: Set<string> | null, textQ: string): UnitRow[] {
+function filterRows(
+  rows: UnitRow[],
+  states: Set<string> | null,
+  textQ: string,
+  onlyEmptyTarget: boolean
+): UnitRow[] {
   let out = rows;
+  if (onlyEmptyTarget) {
+    out = out.filter((u) => !u.target.trim());
+  }
   if (states && states.size > 0) {
     out = out.filter((u) => states.has(u.targetState));
   }
@@ -372,6 +383,7 @@ function scoreAlPathForHints(fsPath: string, hints: string[]): number {
 
 const AL_GLOB = '**/*.al';
 const AL_EXCLUDE = '**/node_modules/**';
+const SECRET_DEEPL_KEY = 'bcXlf.deeplApiKey';
 /** Upper bound for workspace file discovery — avoids missing AL when the project has many .al files. */
 const AL_MAX_FILES_TO_SCAN = 200_000;
 /** Max distinct AL locations offered when many files contain the same caption. */
@@ -431,15 +443,58 @@ async function openAlAtNeedle(uri: vscode.Uri, needle: string): Promise<void> {
   });
 }
 
+/** Narrow search to likely object files before scanning the whole workspace (BC Xliff Generator hints). */
+function buildNarrowAlGlobsFromHints(hints: string[]): string[] {
+  const globs: string[] = [];
+  for (const h of hints) {
+    const safe = h.replace(/[^\w\s-]/g, '').trim();
+    if (safe.length < 2) {
+      continue;
+    }
+    const compact = safe.replace(/\s+/g, '');
+    if (compact.length >= 3) {
+      globs.push(`**/*${compact}*.al`);
+    }
+  }
+  return globs.slice(0, 8);
+}
+
 async function findAlMatchesByScan(
   needles: string[],
-  xliffNote?: string
+  xliffNote: string | undefined,
+  token: vscode.CancellationToken,
+  progress?: vscode.Progress<{ message?: string }>
 ): Promise<Array<{ uri: vscode.Uri; needle: string; previewLine: number; previewCol: number }>> {
   if (needles.length === 0) {
     return [];
   }
   const pathHints = buildAlNotePathHints(xliffNote);
-  const uris = await vscode.workspace.findFiles(AL_GLOB, AL_EXCLUDE, AL_MAX_FILES_TO_SCAN);
+  let uris: vscode.Uri[] = [];
+  const narrowGlobs = buildNarrowAlGlobsFromHints(pathHints);
+  if (narrowGlobs.length > 0) {
+    progress?.report({ message: l10n.t('Searching AL by object hint…') });
+    const seen = new Set<string>();
+    for (const g of narrowGlobs) {
+      if (token.isCancellationRequested) {
+        throw new vscode.CancellationError();
+      }
+      const part = await vscode.workspace.findFiles(g, AL_EXCLUDE, 600);
+      for (const u of part) {
+        seen.add(u.toString());
+      }
+      if (seen.size >= 500) {
+        break;
+      }
+    }
+    uris = [...seen].map((s) => vscode.Uri.parse(s));
+  }
+  if (uris.length === 0) {
+    progress?.report({ message: l10n.t('Listing AL files…') });
+    uris = await vscode.workspace.findFiles(AL_GLOB, AL_EXCLUDE, AL_MAX_FILES_TO_SCAN);
+  }
+  if (token.isCancellationRequested) {
+    throw new vscode.CancellationError();
+  }
   const sortedUris = [...uris].sort((a, b) => {
     const sa = scoreAlPathForHints(a.fsPath, pathHints);
     const sb = scoreAlPathForHints(b.fsPath, pathHints);
@@ -448,6 +503,7 @@ async function findAlMatchesByScan(
     }
     return a.fsPath.localeCompare(b.fsPath);
   });
+  const totalFiles = sortedUris.length;
 
   for (const needle of needles) {
     const batch: Array<{
@@ -457,7 +513,17 @@ async function findAlMatchesByScan(
       previewCol: number;
       pathScore: number;
     }> = [];
+    let fileIdx = 0;
     for (const uri of sortedUris) {
+      if (token.isCancellationRequested) {
+        throw new vscode.CancellationError();
+      }
+      fileIdx++;
+      if (fileIdx === 1 || fileIdx % 25 === 0 || fileIdx === totalFiles) {
+        progress?.report({
+          message: l10n.t('Scanning AL files… {0} / {1}', fileIdx, totalFiles)
+        });
+      }
       if (batch.length >= AL_MAX_MATCHES) {
         break;
       }
@@ -510,7 +576,24 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
       await vscode.window.showWarningMessage(l10n.t('Nothing to search (empty source).'));
       return;
     }
-    const matches = await findAlMatchesByScan(needles, xliffNote);
+    let matches: Awaited<ReturnType<typeof findAlMatchesByScan>>;
+    try {
+      matches = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: l10n.t('BC XLF: Jump to AL'),
+          cancellable: true
+        },
+        async (progress, token) => {
+          return findAlMatchesByScan(needles, xliffNote, token, progress);
+        }
+      );
+    } catch (e) {
+      if (e instanceof vscode.CancellationError) {
+        return;
+      }
+      throw e;
+    }
     if (matches.length === 0) {
       const primary = needles[0] ?? '';
       await vscode.commands.executeCommand('workbench.action.findInFiles', {
@@ -542,6 +625,9 @@ async function goToAlSource(source: string, xliffNote?: string, target?: string)
       await openAlAtNeedle(picked.m.uri, picked.m.needle);
     }
   } catch (err) {
+    if (err instanceof vscode.CancellationError) {
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     await vscode.window.showErrorMessage(l10n.t('Jump to AL failed: {0}', msg));
   }
@@ -574,13 +660,23 @@ async function revealTransUnitInTextEditor(document: vscode.TextDocument, id: st
     );
     return;
   }
-  const pos = document.positionAt(idx);
+  const tuStart = text.lastIndexOf('<trans-unit', idx);
+  const tuEnd = text.indexOf('</trans-unit>', idx);
+  let revealAt = idx;
+  if (tuStart >= 0 && tuEnd > tuStart) {
+    const block = text.slice(tuStart, tuEnd);
+    const tm = block.match(/<target\b[^>]*>/i);
+    if (tm && tm.index !== undefined) {
+      revealAt = tuStart + tm.index;
+    }
+  }
+  const pos = document.positionAt(revealAt);
   const editor = await vscode.window.showTextDocument(document, {
     viewColumn: vscode.ViewColumn.Beside,
     preview: true,
     selection: new vscode.Selection(pos, pos)
   });
-  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 }
 
 export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
@@ -606,21 +702,36 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview, scriptUri);
 
+    const panelBaseTitle = path.basename(document.uri.fsPath);
+    let pendingFlush = false;
+
     let working: XlfDocument | null = null;
     let unitSpans = new Map<string, { start: number; end: number }>();
-    let lastFilter: { states: Set<string> | null; text: string } = { states: null, text: '' };
+    let lastFilter: { states: Set<string> | null; text: string; onlyEmptyTarget: boolean } = {
+      states: null,
+      text: '',
+      onlyEmptyTarget: false
+    };
     let applyingEdit = false;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let applyQueue: Promise<void> = Promise.resolve();
     /** Skip document-driven refresh right after we rewrote the buffer (avoids list flicker / focus loss). */
     let ignoreDocRefreshUntil = 0;
 
+    const applyEditsOnSaveOnly = (): boolean =>
+      vscode.workspace.getConfiguration('bcXlf').get('applyEditsOnSaveOnly', true);
+
     const postFilteredUnitsToWebview = (): void => {
       if (!working) {
         return;
       }
       const rows = buildRowsFromWorking(working);
-      const filtered = filterRows(rows, lastFilter.states, lastFilter.text);
+      const filtered = filterRows(
+        rows,
+        lastFilter.states,
+        lastFilter.text,
+        lastFilter.onlyEmptyTarget
+      );
       const stats = computeFileStatsFromWorking(working);
       webviewPanel.webview.postMessage({
         type: 'units',
@@ -631,11 +742,14 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         states: [...TARGET_STATES],
         gitConflicts: [],
         editingLocked: false,
-        viewMode: 'editor'
+        viewMode: 'editor',
+        targetLanguage: working.targetLanguage,
+        deferEditsUntilSave: applyEditsOnSaveOnly(),
+        hasPendingEdits: pendingFlush
       });
     };
 
-    const applyWorkingFullReplace = async (): Promise<void> => {
+    const writeWorkingToBuffer = async (): Promise<void> => {
       if (!working) {
         return;
       }
@@ -647,8 +761,24 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         );
         return;
       }
-      const content = serializeXlf(working, asMergeResult(working));
-      const endPos = document.positionAt(document.getText().length);
+      const text = document.getText();
+      const { document: parsed } = await parseXlf(text, undefined, { forceFullParse: true });
+      const header: XlfDocument = {
+        sourceLanguage: working.sourceLanguage,
+        targetLanguage: working.targetLanguage,
+        original: working.original,
+        datatype: working.datatype,
+        units: new Map(),
+        orderedIds: []
+      };
+      let content: string;
+      try {
+        content = applyTransUnitDiffSurgically(text, parsed, working, header);
+      } catch (e) {
+        console.warn('bc-xlf-editor: surgical editor write failed, using full serialize', e);
+        content = serializeXlf(working, asMergeResult(working));
+      }
+      const endPos = document.positionAt(text.length);
       const edit = new vscode.WorkspaceEdit();
       edit.replace(document.uri, new vscode.Range(new vscode.Position(0, 0), endPos), content);
       applyingEdit = true;
@@ -661,8 +791,15 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       }
     };
 
+    const applyWorkingFullReplace = async (): Promise<void> => {
+      await writeWorkingToBuffer();
+    };
+
     const applyPartialOrFull = async (unitId: string): Promise<void> => {
       if (!working) {
+        return;
+      }
+      if (applyEditsOnSaveOnly()) {
         return;
       }
       if (hasGitMergeConflictMarkers(document.getText())) {
@@ -749,6 +886,8 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
         if (gitConflicts.length > 0) {
           working = null;
           unitSpans = new Map();
+          pendingFlush = false;
+          webviewPanel.title = panelBaseTitle;
           const totalCount = countTransUnitsInBuffer(text);
           webviewPanel.webview.postMessage({
             type: 'units',
@@ -759,13 +898,35 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
             states: [...TARGET_STATES],
             gitConflicts,
             editingLocked: true,
-            viewMode: 'conflictsOnly'
+            viewMode: 'conflictsOnly',
+            targetLanguage: '',
+            deferEditsUntilSave: false,
+            hasPendingEdits: false
           });
           return;
         }
         working = cloneXlf(doc);
         unitSpans = buildTransUnitSpanIndex(text);
+        pendingFlush = false;
+        webviewPanel.title = panelBaseTitle;
         postFilteredUnitsToWebview();
+        const tryScrollToTransUnit = (): void => {
+          const buf = document.getText();
+          const editors = vscode.window.visibleTextEditors.filter(
+            (e) => e.document.uri.toString() === document.uri.toString()
+          );
+          for (const ed of editors) {
+            const off = ed.document.offsetAt(ed.selection.active);
+            const id = findTransUnitIdAtOffset(buf, off);
+            if (id) {
+              webviewPanel.webview.postMessage({ type: 'scrollToId', id });
+              return;
+            }
+          }
+        };
+        for (const ms of [0, 120, 400]) {
+          setTimeout(() => tryScrollToTransUnit(), ms);
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         webviewPanel.webview.postMessage({
@@ -788,6 +949,9 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       if (applyingEdit || Date.now() < ignoreDocRefreshUntil) {
         return;
       }
+      if (pendingFlush && applyEditsOnSaveOnly()) {
+        return;
+      }
       if (debounceTimer !== undefined) {
         clearTimeout(debounceTimer);
       }
@@ -797,6 +961,42 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       }, 350);
     };
 
+    const subSave = vscode.workspace.onWillSaveTextDocument((e) => {
+      if (e.document.uri.toString() !== document.uri.toString()) {
+        return;
+      }
+      if (!applyEditsOnSaveOnly() || !pendingFlush || !working) {
+        return;
+      }
+      e.waitUntil(
+        (async () => {
+          try {
+            await writeWorkingToBuffer();
+            pendingFlush = false;
+            webviewPanel.title = panelBaseTitle;
+            postFilteredUnitsToWebview();
+          } catch (err) {
+            console.error(err);
+            void vscode.window.showErrorMessage(
+              l10n.t('Could not apply translation edits before save: {0}', String(err))
+            );
+          }
+        })()
+      );
+    });
+
+    const subSel = vscode.window.onDidChangeTextEditorSelection((e) => {
+      if (e.textEditor.document.uri.toString() !== document.uri.toString()) {
+        return;
+      }
+      const buf = document.getText();
+      const off = e.textEditor.document.offsetAt(e.selections[0].active);
+      const id = findTransUnitIdAtOffset(buf, off);
+      if (id) {
+        webviewPanel.webview.postMessage({ type: 'scrollToId', id });
+      }
+    });
+
     webviewPanel.webview.onDidReceiveMessage((msg) => {
       if (msg?.type === 'ready') {
         void enqueueSendUnits();
@@ -805,9 +1005,11 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       if (msg?.type === 'filterChanged') {
         const states = Array.isArray(msg.states) ? (msg.states as string[]) : [];
         const text = typeof msg.text === 'string' ? msg.text : '';
+        const onlyEmptyTarget = msg.onlyEmptyTarget === true;
         lastFilter = {
           states: states.length > 0 ? new Set(states) : null,
-          text
+          text,
+          onlyEmptyTarget
         };
         if (working && !hasGitMergeConflictMarkers(document.getText())) {
           postFilteredUnitsToWebview();
@@ -867,7 +1069,71 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           target: nextTarget,
           targetState: nextState
         });
-        enqueueApply(() => applyPartialOrFull(id));
+        if (applyEditsOnSaveOnly()) {
+          pendingFlush = true;
+          webviewPanel.title = `● ${panelBaseTitle}`;
+          postFilteredUnitsToWebview();
+        } else {
+          enqueueApply(() => applyPartialOrFull(id));
+        }
+        return;
+      }
+      if (msg?.type === 'deeplTranslate' && working) {
+        const id = typeof msg.id === 'string' ? msg.id : '';
+        if (!id) {
+          return;
+        }
+        void (async () => {
+          const key = await this.context.secrets.get(SECRET_DEEPL_KEY);
+          if (!key) {
+            void vscode.window.showWarningMessage(
+              l10n.t('Set a DeepL API key (command BC XLF: Set DeepL API key).')
+            );
+            return;
+          }
+          const unit = working!.units.get(id);
+          if (!unit) {
+            return;
+          }
+          const cfg = vscode.workspace.getConfiguration('bcXlf');
+          const useFree = cfg.get('deeplUseFreeApi', true);
+          const stateRaw = cfg.get<string>('deeplTargetState', 'needs-review-translation');
+          const nextState = parseTargetState(stateRaw) ?? 'needs-review-translation';
+          try {
+            await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: l10n.t('DeepL'),
+                cancellable: false
+              },
+              async () => {
+                const { text } = await translateWithDeepL(
+                  key,
+                  unit.source,
+                  working!.targetLanguage,
+                  useFree,
+                  working!.sourceLanguage
+                );
+                working!.units.set(id, {
+                  ...unit,
+                  target: text,
+                  targetState: nextState
+                });
+                if (applyEditsOnSaveOnly()) {
+                  pendingFlush = true;
+                  webviewPanel.title = `● ${panelBaseTitle}`;
+                } else {
+                  await applyPartialOrFull(id);
+                }
+                postFilteredUnitsToWebview();
+              }
+            );
+          } catch (e) {
+            void vscode.window.showErrorMessage(
+              l10n.t('DeepL: {0}', e instanceof Error ? e.message : String(e))
+            );
+          }
+        })();
         return;
       }
       if (msg?.type === 'goToAlSource' && typeof msg.source === 'string') {
@@ -889,6 +1155,8 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     });
     webviewPanel.onDidDispose(() => {
       sub.dispose();
+      subSel.dispose();
+      subSave.dispose();
       if (debounceTimer !== undefined) {
         clearTimeout(debounceTimer);
       }

@@ -16,6 +16,10 @@ export function getWebviewUiStrings(): Record<string, string> {
     stateDdHint: l10n.t(
       'Leave all unchecked to show every state. Check one or more to list rows in any of those states.'
     ),
+    filterEmptyTargetOnly: l10n.t('Empty target only'),
+    filterEmptyTargetOnlyTitle: l10n.t(
+      'Show rows where the target text is blank (whitespace only), regardless of state. Use when status is wrong but the cell is empty.'
+    ),
     filterSearchLabel: l10n.t('Search id, source, or target'),
     filterPlaceholder: l10n.t('Type to filter rows…'),
     filterClear: l10n.t('Clear'),
@@ -29,6 +33,10 @@ export function getWebviewUiStrings(): Record<string, string> {
     ),
     btnXlf: l10n.t('XLF'),
     btnXlfTitle: l10n.t('Reveal this trans-unit in the XLF XML'),
+    btnDeepL: l10n.t('DeepL'),
+    btnDeepLTitle: l10n.t(
+      'Translate source into the target language with DeepL (requires API key). Does not save the file by itself.'
+    ),
     targetLockedTitle: l10n.t('Resolve Git merge conflicts in the panel above first.'),
     statTransUnits: l10n.t('Trans-units'),
     statTotal: l10n.t('Total'),
@@ -53,6 +61,12 @@ export function getWebviewUiStrings(): Record<string, string> {
     ),
     statusListHint: l10n.t(' — edit target / state; changes apply to the file buffer'),
     statusListHintLocked: l10n.t(' — resolve Git conflicts above to edit targets'),
+    statusEditsOnSave: l10n.t(
+      'Edits apply to the XML when you save the file (Ctrl+S).'
+    ),
+    statusEditsPendingSave: l10n.t(
+      'Unsaved changes in the panel — save (Ctrl+S) to write them to the XML.'
+    ),
     statusListPlain: l10n.t('List: {0} trans-units{1}'),
     statusListFiltered: l10n.t('List: showing {0} of {1} trans-units (filters active){2}'),
     parseErrorPrefix: l10n.t('Parse error: {0}')

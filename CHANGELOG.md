@@ -1,63 +1,103 @@
-# Change Log
-All notable changes to the BC XLF Editor extension will be documented in this file.
+# Changelog
+
+All notable changes to **BC XLF Editor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-
-## [1.1.0] - 2026-03-28
-
-Localization and merge-editor layout fixes. **Changed** lists the **1.0.3** performance work (repeated here for convenience) **and** further performance improvements added after 1.0.3 (partial buffer updates, host-side filtering, conflict fast path). **[1.0.3]** below still records that tag on its own.
+## [1.2.0] — 2026-03-30
 
 ### Added
 
-- **Localization:** Display language support for **English** and **German** via `package.nls.json` / `package.nls.de.json` (manifest, commands, settings) and runtime `vscode.l10n` bundles under `l10n/`. Merge editor webview strings are built in the extension host and injected into the HTML so the custom editor follows the same locale as VS Code.
+- **Update translation from `.g.xlf`** — The merge command is renamed and clarified: it syncs a locale file with a generated base (`.g.xlf`), not a generic “merge” of two arbitrary files.
+- **Automatic base file resolution** — When you run the update from the palette or from the explorer, the extension tries to find the matching `.g.xlf` in the same folder (stem / `original` / single candidate). If several `.g.xlf` files exist, a **Quick Pick** lets you choose; if none match, the file dialog opens (defaulting to the translation file’s folder).
+- **Surgical writes** — Update and custom-editor saves can rewrite **only changed `trans-unit` blocks** (plus header line and appends for new units), instead of re-serializing the whole file. Improves Git diffs. Falls back to full serialize if a surgical write fails. Controlled with `bcXlf.surgicalMerge` (default: on).
+- **DeepL translation** — Per-row **DeepL** button in the BC XLF Editor; uses the XLF target language and optional **`source_lang`** from the file’s `source-language`. API key is stored with **BC XLF: Set DeepL API Key** / **Clear DeepL API Key** (secret storage, not settings). Settings: `bcXlf.deeplUseFreeApi`, `bcXlf.deeplTargetState`.
+- **Filter: empty target only** — Checkbox to list rows where the target text is blank (whitespace only), independent of `target` state (useful when state and content disagree).
+- **AL “Jump to source”** — Progress notification with file counts; **cancel** support; optional **narrow search** via Xliff Generator object hints (`**/*ObjectName*.al`) before scanning all `*.al` files.
+- **Scroll / reveal** — `scrollToId` when the same XLF is open in a text editor (e.g. search/split); **XLF** reveal moves the cursor to the **`<target`** opening tag when possible.
+- **Deferred buffer writes** — `bcXlf.applyEditsOnSaveOnly` (default: **on**): list edits and DeepL results stay in the panel model until **Save (Ctrl+S)**; the XML buffer is flushed in `onWillSaveTextDocument`. Panel title shows a **●** prefix while changes are pending; status line explains the behavior. Set to **off** for immediate buffer updates after each edit (previous behavior).
 
 ### Changed
 
-- **Performance — merge command:** Counting `trans-unit` entries for progress reporting no longer builds a giant array of regex matches on very large files.
-- **Performance — XLF / Git conflicts:** Resolving all merge conflicts in one action applies replacements in a single pass instead of re-scanning the file after each block. Locating the owning `trans-unit` for each conflict uses one index of open tags plus binary search instead of re-scanning the prefix for every block. Files without `<<<<<<<` markers skip the conflict regex and strip step and go straight to SAX parsing.
-- **Performance — merge editor:** Hot paths use a lightweight conflict-marker check instead of full conflict analysis. “Jump to AL” scans `.al` files in an order ranked by Xliff note path hints so likely matches are found sooner. The custom editor HTML template is read from disk once per process. Refresh work is queued so overlapping parse requests do not run in parallel.
-- **Performance — webview:** The virtual list updates visible rows with `replaceChildren` instead of removing nodes one by one.
-- **Performance — partial buffer updates (after 1.0.3):** Editing a `trans-unit` in the merge editor can replace only that unit’s XML span when the buffer still matches the indexed range, instead of re-serializing the whole file each time (`buildTransUnitSpanIndex`, `serializeTransUnit`).
-- **Performance — host-side filters (after 1.0.3):** Target-state and text filters are applied in the extension host before posting rows to the webview, so fewer rows are sent to the virtual list on large files.
-- **Performance — Git conflict fast path (after 1.0.3):** For the merge editor, when the buffer still contains Git conflict markers, `parseXlf` can supply conflict metadata for the UI without a full SAX parse; the merge command continues to use `forceFullParse` so merges always see the full document.
-- **Performance — conflict-only UI (after 1.0.3):** Until conflicts are resolved, the view focuses on the conflict panel and a cheap `trans-unit` count instead of building the full row list.
-- **Settings:** Merge strategy enum values show localized labels and descriptions in the settings UI (`enumItemLabels` / `enumDescriptions`).
+- Command titles and messaging now say **update** / **translation from `.g.xlf`** instead of “merge” where it was misleading.
+- **Reveal in XLF** uses `TextEditorRevealType.InCenterIfOutsideViewport` when jumping to the target region.
+- README-oriented description in `package.json` / nls updated to describe “update from `.g.xlf`” rather than generic merge.
+
+### Fixed (behavior / UX)
+
+- Git diffs after update are much smaller when surgical merge is used and `sortById` does not force a full reorder in that path (surgical path preserves document order for existing units; new units are appended before `</group>`).
+
+## [1.1.1]
+
+### Added
+
+- Extension **marketplace icon** (`images/icon.png`).
+
+## [1.1.0]
+
+### Changed
+
+- Release version bump and packaging alignment with the feature set below (no functional changelog was maintained separately before 1.2.0).
+
+### Notes (feature set at 1.1.x)
+
+At this version the extension already included:
+
+- **Merge** command: pick base `.g.xlf` and locale `.xlf`, merge in place with streaming SAX parsing.
+- **Strategies** when source text changes: `keep-translated` vs `prefer-source` (`bcXlf.defaultStrategy`).
+- **Sort** trans-units by id (`bcXlf.sortById`), **preserve removed** units (`bcXlf.preserveRemoved`).
+- **Open Git diff** after merge (`bcXlf.openDiffAfterMerge`).
+- **BC XLF Editor** custom editor: virtualized list of `trans-unit` rows, edit target and state, **AL** / **XLF** jump actions.
+- **Git merge conflicts** in `.xlf`: panel with ours/theirs per block and accept-all.
+- **Progress** notification when parsing/merging large files (over 1000 trans-units).
+
+## [1.0.4]
+
+### Changed
+
+- Version / release housekeeping.
+
+## [1.0.3]
+
+### Changed
+
+- Version / release housekeeping.
+- Removed bundled `Translations` sample directory from the repo (extension behavior unchanged).
+
+## [1.0.2]
+
+### Added
+
+- `repository` and `homepage` fields in `package.json` for marketplace / vsce links.
+
+### Changed
+
+- **MIT** license, **BC XLF Editor** display name and branding.
+- **VS Code** engine raised to **^1.85.0**.
+
+## [1.0.1]
+
+### Changed
+
+- Release and packaging fixes.
+
+## [1.0.0]
+
+### Added
+
+- Initial **BC XLF Editor** extension: merge Business Central `.g.xlf` with locale `.xlf` files.
+- Custom editor with list UI, conflict handling, and **jump to AL** (caption / ToolTip / Label literals in `.al` files).
+- GitHub **release workflow** for packaging.
 
 ### Fixed
 
-- **Merge editor layout:** The help line under the filters no longer steals vertical flex space from the translation list; the main header fills the webview and the row list receives the remaining height.
-- **Webview height:** Replaced `100vh` on the document with `html` / `body` height `100%` so the UI tracks the editor pane when the window or split is resized (embedded webviews should not rely on viewport `vh`).
-- **Git merge conflict panel:** Removed the fixed `max-height` on the conflict list so the scrollable area grows with the panel instead of leaving a large empty band below the cards when the conflict UI is shown.
+- **Jump to AL** behavior and related fixes.
 
-## [1.0.3] - 2026-03-27
-
-### Changed
-
-- **Performance — merge command:** Counting `trans-unit` entries for progress reporting no longer builds a giant array of regex matches on very large files.
-- **Performance — XLF / Git conflicts:** Resolving all merge conflicts in one action applies replacements in a single pass instead of re-scanning the file after each block. Locating the owning `trans-unit` for each conflict uses one index of open tags plus binary search instead of re-scanning the prefix for every block. Files without `<<<<<<<` markers skip the conflict regex and strip step and go straight to SAX parsing.
-- **Performance — merge editor:** Hot paths use a lightweight conflict-marker check instead of full conflict analysis. “Jump to AL” scans `.al` files in an order ranked by Xliff note path hints so likely matches are found sooner. The custom editor HTML template is read from disk once per process. Refresh work is queued so overlapping parse requests do not run in parallel.
-- **Performance — webview:** The virtual list updates visible rows with `replaceChildren` instead of removing nodes one by one.
-
-## [1.0.1] - 2026-03-27
-
-### Changed
-
-- Minimum supported VS Code version is now **1.85** (previously 1.110); `engines.vscode` and `@types/vscode` updated so the extension remains installable on slightly older VS Code and Cursor builds without using APIs that require the latest release.
-
-## [0.0.1] - 2026-03-27
-
-### Added
-
-- MIT license ([LICENSE.md](LICENSE.md)).
-- Merge workflow: combine a Business Central compiler base file (`.g.xlf`) with a custom translation file; result is written to the custom file.
-- Optional custom editor for `.xlf` files to browse `trans-unit` rows in a virtualized list.
-- Commands: **BC XLF: Merge Translation Files** (command palette; explorer and editor title context when an `.xlf` is selected), **BC XLF: Show Last Merge Summary**.
-- Settings under **BC XLF Editor**: `bcXlf.defaultStrategy`, `bcXlf.sortById`, `bcXlf.preserveRemoved`, `bcXlf.openDiffAfterMerge`.
-- SAX streaming parser and stable serializer aimed at predictable Git diffs; progress notification when parsing large files (more than 1000 `trans-unit` entries).
-- Optional Git diff after merge when the Git extension is available.
-- Jump from the merge editor to matching `.al` source (where applicable).
-
-### Changed
-
-- Extension display name and user-facing copy use the **BC XLF Editor** branding (Marketplace display name, settings section title, custom editor tab label, merge progress notification, session summary document title).
+[1.2.0]: https://github.com/B0tis/bc-xlf-editor/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/B0tis/bc-xlf-editor/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/B0tis/bc-xlf-editor/compare/v1.0.4...v1.1.0
+[1.0.4]: https://github.com/B0tis/bc-xlf-editor/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/B0tis/bc-xlf-editor/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/B0tis/bc-xlf-editor/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/B0tis/bc-xlf-editor/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/B0tis/bc-xlf-editor/releases/tag/v1.0.0

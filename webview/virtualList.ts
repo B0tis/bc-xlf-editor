@@ -30,6 +30,13 @@ export class VirtualList {
     this.render();
   }
 
+  /** Scroll so row `index` is near the top of the viewport (best-effort). */
+  scrollToIndex(index: number): void {
+    const i = Math.max(0, Math.min(index, Math.max(0, this.items.length - 1)));
+    this.viewport.scrollTop = i * this.itemHeight;
+    this.render();
+  }
+
   private onScroll(): void {
     this.render();
   }

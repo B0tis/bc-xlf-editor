@@ -49,6 +49,14 @@
       {
         "command": "bcXlf.showSummary",
         "title": "%command.showSummary.title%"
+      },
+      {
+        "command": "bcXlf.setDeepLApiKey",
+        "title": "%command.setDeepLApiKey.title%"
+      },
+      {
+        "command": "bcXlf.clearDeepLApiKey",
+        "title": "%command.clearDeepLApiKey.title%"
       }
     ],
     "menus": {
@@ -101,6 +109,33 @@
           "type": "boolean",
           "default": true,
           "description": "%config.openDiffAfterMerge.description%"
+        },
+        "bcXlf.surgicalMerge": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.surgicalMerge.description%"
+        },
+        "bcXlf.deeplUseFreeApi": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.deeplUseFreeApi.description%"
+        },
+        "bcXlf.deeplTargetState": {
+          "type": "string",
+          "default": "needs-review-translation",
+          "enum": [
+            "translated",
+            "needs-translation",
+            "needs-review-translation",
+            "needs-adaptation",
+            "final"
+          ],
+          "description": "%config.deeplTargetState.description%"
+        },
+        "bcXlf.applyEditsOnSaveOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.applyEditsOnSaveOnly.description%"
         }
       }
     }

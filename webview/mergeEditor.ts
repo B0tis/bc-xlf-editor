@@ -104,8 +104,18 @@ function renderRow(
   btnXlf.addEventListener('click', () => {
     vscode.postMessage({ type: 'revealInXlf', id: u.id });
   });
+  const btnDeepL = document.createElement('button');
+  btnDeepL.type = 'button';
+  btnDeepL.className = 'jump-btn';
+  btnDeepL.textContent = t('btnDeepL');
+  btnDeepL.title = t('btnDeepLTitle');
+  btnDeepL.disabled = editingLocked;
+  btnDeepL.addEventListener('click', () => {
+    vscode.postMessage({ type: 'deeplTranslate', id: u.id });
+  });
   jumpCell.appendChild(btnAl);
   jumpCell.appendChild(btnXlf);
+  jumpCell.appendChild(btnDeepL);
 
   const tgtCell = document.createElement('div');
   tgtCell.className = 'cell tgt';
@@ -225,8 +235,16 @@ function closeStatePanel(
   toggle.setAttribute('aria-expanded', 'false');
 }
 
-function hasActiveFilters(listEl: HTMLElement, textEl: HTMLInputElement): boolean {
-  return getCheckedStateSet(listEl).size > 0 || textEl.value.trim().length > 0;
+function hasActiveFilters(
+  listEl: HTMLElement,
+  textEl: HTMLInputElement,
+  emptyOnlyEl: HTMLInputElement
+): boolean {
+  return (
+    getCheckedStateSet(listEl).size > 0 ||
+    textEl.value.trim().length > 0 ||
+    emptyOnlyEl.checked
+  );
 }
 
 interface FileStats {
@@ -451,6 +469,14 @@ function applyChrome(): void {
   if (fh) {
     fh.textContent = t('filterHint');
   }
+  const fel = document.getElementById('filterEmptyTargetLabel');
+  if (fel) {
+    fel.textContent = t('filterEmptyTargetOnly');
+  }
+  const fech = document.getElementById('filterEmptyTarget') as HTMLInputElement | null;
+  if (fech) {
+    fech.title = t('filterEmptyTargetOnlyTitle');
+  }
   const st = document.getElementById('status');
   if (st) {
     st.textContent = t('statusLoading');
@@ -474,6 +500,7 @@ function boot(): void {
   const stateDdSummary = document.getElementById('stateDdSummary');
   const filterText = document.getElementById('filterText') as HTMLInputElement | null;
   const filterClear = document.getElementById('filterClear') as HTMLButtonElement | null;
+  const filterEmptyTarget = document.getElementById('filterEmptyTarget') as HTMLInputElement | null;
 
   if (
     !viewport ||
@@ -491,7 +518,8 @@ function boot(): void {
     !stateDdList ||
     !stateDdSummary ||
     !filterText ||
-    !filterClear
+    !filterClear ||
+    !filterEmptyTarget
   ) {
     return;
   }
@@ -500,7 +528,7 @@ function boot(): void {
   applyChrome();
 
   let filterDebounce: ReturnType<typeof setTimeout> | undefined;
-  let list: VirtualList;
+  let list!: VirtualList;
 
   let firstUnitsLoad = true;
   const uiState = { editingLocked: false };
@@ -510,6 +538,8 @@ function boot(): void {
   let matchCount = 0;
   let totalInFile = 0;
   let hostFileStats: FileStats | null = null;
+  let deferEditsUntilSave = false;
+  let hasPendingEdits = false;
 
   const postFilterToHost = (): void => {
     if (viewMode !== 'editor' || uiState.editingLocked) {
@@ -520,7 +550,8 @@ function boot(): void {
     vscode.postMessage({
       type: 'filterChanged',
       states,
-      text: filterText.value
+      text: filterText.value,
+      onlyEmptyTarget: filterEmptyTarget.checked
     });
   };
 
@@ -550,10 +581,17 @@ function boot(): void {
     updateFileStats(fileStats, allUnits, gitConflictCount, hostFileStats);
 
     const hint = uiState.editingLocked ? t('statusListHintLocked') : t('statusListHint');
-    if (!hasActiveFilters(stateDdList, filterText)) {
-      status.textContent = format(t('statusListPlain'), matchCount, hint);
+    let listLine: string;
+    if (!hasActiveFilters(stateDdList, filterText, filterEmptyTarget)) {
+      listLine = format(t('statusListPlain'), matchCount, hint);
     } else {
-      status.textContent = format(t('statusListFiltered'), matchCount, totalCount, hint);
+      listLine = format(t('statusListFiltered'), matchCount, totalCount, hint);
+    }
+    if (deferEditsUntilSave) {
+      const saveLine = hasPendingEdits ? t('statusEditsPendingSave') : t('statusEditsOnSave');
+      status.textContent = `${saveLine}\n${listLine}`;
+    } else {
+      status.textContent = listLine;
     }
   };
 
@@ -602,11 +640,16 @@ function boot(): void {
 
   filterClear.addEventListener('click', () => {
     filterText.value = '';
+    filterEmptyTarget.checked = false;
     stateDdList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((cb) => {
       cb.checked = false;
     });
     closeStatePanel(stateDdPanel, stateDdToggle);
     postFilterToHost();
+  });
+
+  filterEmptyTarget.addEventListener('change', () => {
+    schedulePostFilterToHost();
   });
 
   window.addEventListener('message', (ev: MessageEvent) => {
@@ -621,7 +664,18 @@ function boot(): void {
       totalCount?: number;
       matchCount?: number;
       fileStats?: FileStats | null;
+      targetLanguage?: string;
+      id?: string;
+      deferEditsUntilSave?: boolean;
+      hasPendingEdits?: boolean;
     };
+    if (msg.type === 'scrollToId' && typeof msg.id === 'string') {
+      const idx = allUnits.findIndex((u) => u.id === msg.id);
+      if (idx >= 0) {
+        list.scrollToIndex(idx);
+      }
+      return;
+    }
     if (msg.type === 'loading') {
       mergeHeader.hidden = true;
       editorShell.hidden = true;
@@ -665,6 +719,8 @@ function boot(): void {
         msg.fileStats && typeof msg.fileStats === 'object'
           ? (msg.fileStats as FileStats)
           : null;
+      deferEditsUntilSave = msg.deferEditsUntilSave === true;
+      hasPendingEdits = msg.hasPendingEdits === true;
 
       if (gc.length > 0) {
         renderGitMergeCards(gitMergeCards, gc);

@@ -266,6 +266,18 @@ export function buildTransUnitSpanIndex(content: string): Map<string, { start: n
   return map;
 }
 
+/** Which `trans-unit` contains this byte offset (e.g. cursor from search / text editor). */
+export function findTransUnitIdAtOffset(content: string, offset: number): string | undefined {
+  const safe = Math.min(Math.max(0, offset), content.length);
+  const spans = buildTransUnitSpanIndex(content);
+  for (const [id, span] of spans) {
+    if (safe >= span.start && safe < span.end) {
+      return id;
+    }
+  }
+  return undefined;
+}
+
 export async function parseXlf(
   content: string,
   onProgress?: (parsed: number) => void,

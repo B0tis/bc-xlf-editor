@@ -1,12 +1,17 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
-import { parseXlf } from './xlfParser';
+import * as path from 'path';
+import { parseXlf, hasGitMergeConflictMarkers } from './xlfParser';
 import { mergeXlf } from './xlfMerger';
 import { serializeXlf } from './xlfSerializer';
+import { applyMergeSurgically } from './xlfSurgicalMerge';
+import { listBaseGxlCandidates } from './resolveBaseGxl';
 import { MergeOptions, MergeStats, XlfDocument } from './types';
 import { MergeEditorProvider } from './mergeEditorProvider';
 
 const l10n = vscode.l10n;
+
+const SECRET_DEEPL_KEY = 'bcXlf.deeplApiKey';
 
 let lastStats: MergeStats | undefined;
 
@@ -29,6 +34,16 @@ function buildOutputHeader(base: XlfDocument, custom: XlfDocument): XlfDocument 
     units: base.units,
     orderedIds: base.orderedIds
   };
+}
+
+async function pickFile(title: string, defaultUri?: vscode.Uri): Promise<vscode.Uri | undefined> {
+  const result = await vscode.window.showOpenDialog({
+    title,
+    filters: { [l10n.t('XLF files')]: ['xlf'] },
+    canSelectMany: false,
+    defaultUri
+  });
+  return result?.[0];
 }
 
 async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<void> {
@@ -71,12 +86,24 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       preserveRemoved: config.get('preserveRemoved', false)
     };
 
-    report(l10n.t('Merge…'));
+    report(l10n.t('Update translation…'));
     const result = mergeXlf(base, custom, options);
 
-    report(l10n.t('Serialize…'));
+    report(l10n.t('Write translation file…'));
     const header = buildOutputHeader(base, custom);
-    const output = serializeXlf(header, result);
+    const surgical =
+      config.get('surgicalMerge', true) && !hasGitMergeConflictMarkers(customContent);
+    let output: string;
+    if (surgical) {
+      try {
+        output = applyMergeSurgically(customContent, custom, result, result.stats, options, header);
+      } catch (e) {
+        console.warn('bc-xlf-editor: surgical merge failed, using full serialize', e);
+        output = serializeXlf(header, result);
+      }
+    } else {
+      output = serializeXlf(header, result);
+    }
 
     await fs.writeFile(customUri.fsPath, output, { encoding: 'utf-8' });
     lastStats = result.stats;
@@ -85,7 +112,7 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
 
     const { stats } = result;
     const msg = l10n.t(
-      'Merge complete: +{0} new · {1} conflicts · −{2} removed',
+      'Update complete: +{0} new · {1} source changes · −{2} removed',
       stats.added.length,
       stats.conflicts.length,
       stats.removed.length
@@ -130,6 +157,30 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
   }
 }
 
+async function resolveBaseWithOptionalPick(
+  customUri: vscode.Uri,
+  customContent: string
+): Promise<vscode.Uri | undefined> {
+  const candidates = await listBaseGxlCandidates(customUri, customContent);
+  const dir = vscode.Uri.file(path.dirname(customUri.fsPath));
+  if (candidates.length === 0) {
+    return pickFile(l10n.t('Pick base XLF (.g.xlf)'), dir);
+  }
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  type PickItem = { label: string; description: string; uri: vscode.Uri };
+  const picked = await vscode.window.showQuickPick<PickItem>(
+    candidates.map((u) => ({
+      label: path.basename(u.fsPath),
+      description: u.fsPath,
+      uri: u
+    })),
+    { placeHolder: l10n.t('Pick base .g.xlf') }
+  );
+  return picked?.uri;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
@@ -144,12 +195,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('bcXlf.merge', async () => {
-      const baseUri = await pickFile(l10n.t('Pick base XLF (.g.xlf)'));
-      if (!baseUri) {
+      const customUri = await pickFile(l10n.t('Pick translation XLF (not .g.xlf)'));
+      if (!customUri) {
         return;
       }
-      const customUri = await pickFile(l10n.t('Pick custom XLF (translation)'));
-      if (!customUri) {
+      const customContent = await fs.readFile(customUri.fsPath, 'utf-8');
+      const baseUri = await resolveBaseWithOptionalPick(customUri, customContent);
+      if (!baseUri) {
         return;
       }
       await runMerge(baseUri, customUri);
@@ -158,11 +210,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('bcXlf.mergeFromContext', async (uri?: vscode.Uri) => {
-      const customUri = uri ?? (await pickFile(l10n.t('Pick custom XLF (translation)')));
+      const customUri = uri ?? (await pickFile(l10n.t('Pick translation XLF (not .g.xlf)')));
       if (!customUri) {
         return;
       }
-      const baseUri = await pickFile(l10n.t('Pick base XLF (.g.xlf)'));
+      const customContent = await fs.readFile(customUri.fsPath, 'utf-8');
+      const baseUri = await resolveBaseWithOptionalPick(customUri, customContent);
       if (!baseUri) {
         return;
       }
@@ -174,7 +227,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('bcXlf.showSummary', async () => {
       if (!lastStats) {
         await vscode.window.showInformationMessage(
-          l10n.t('No merge has been run in this session yet.')
+          l10n.t('No update has been run in this session yet.')
         );
         return;
       }
@@ -203,15 +256,28 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.window.showTextDocument(doc, { preview: true });
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('bcXlf.setDeepLApiKey', async () => {
+      const key = await vscode.window.showInputBox({
+        title: l10n.t('DeepL API key'),
+        prompt: l10n.t('Paste your DeepL API authentication key.'),
+        password: true,
+        ignoreFocusOut: true
+      });
+      if (key?.trim()) {
+        await context.secrets.store(SECRET_DEEPL_KEY, key.trim());
+        await vscode.window.showInformationMessage(l10n.t('DeepL API key stored.'));
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('bcXlf.clearDeepLApiKey', async () => {
+      await context.secrets.delete(SECRET_DEEPL_KEY);
+      await vscode.window.showInformationMessage(l10n.t('DeepL API key removed.'));
+    })
+  );
 }
 
 export function deactivate(): void {}
-
-async function pickFile(title: string): Promise<vscode.Uri | undefined> {
-  const result = await vscode.window.showOpenDialog({
-    title,
-    filters: { [l10n.t('XLF files')]: ['xlf'] },
-    canSelectMany: false
-  });
-  return result?.[0];
-}
