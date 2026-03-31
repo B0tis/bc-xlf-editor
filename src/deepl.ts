@@ -64,7 +64,6 @@ export async function translateWithDeepL(
     ? 'https://api-free.deepl.com/v2/translate'
     : 'https://api.deepl.com/v2/translate';
   const body = new URLSearchParams();
-  body.set('auth_key', authKey);
   body.set('text', text);
   body.set('target_lang', xlfLangToDeepL(targetLang));
   const src = sourceLang?.trim();
@@ -75,7 +74,10 @@ export async function translateWithDeepL(
   const res = await fetch(url, {
     method: 'POST',
     body,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `DeepL-Auth-Key ${authKey}`
+    }
   });
   if (!res.ok) {
     const errText = await res.text();
