@@ -7,6 +7,7 @@ export class VirtualList {
   private viewport: HTMLElement;
   private spacer: HTMLElement;
   private items: unknown[] = [];
+  /** Must match `.row` min-height in mergeEditor.html (virtual spacer). */
   private itemHeight = 108;
   private visibleBuffer = 5;
   private renderFn: RowRenderer;

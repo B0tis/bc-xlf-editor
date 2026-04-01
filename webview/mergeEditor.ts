@@ -121,7 +121,7 @@ function renderRow(
   tgtCell.className = 'cell tgt';
   const ta = document.createElement('textarea');
   ta.className = 'target-input';
-  ta.rows = 3;
+  ta.rows = 2;
   ta.value = u.target;
   ta.addEventListener('input', () => {
     u.target = ta.value;
@@ -473,6 +473,11 @@ function applyChrome(): void {
   if (fel) {
     fel.textContent = t('filterEmptyTargetOnly');
   }
+  const dbb = document.getElementById('deeplTranslateBatch');
+  if (dbb) {
+    dbb.textContent = t('btnDeepLBatch');
+    dbb.title = t('btnDeepLBatchTitle');
+  }
   const fech = document.getElementById('filterEmptyTarget') as HTMLInputElement | null;
   if (fech) {
     fech.title = t('filterEmptyTargetOnlyTitle');
@@ -501,6 +506,7 @@ function boot(): void {
   const filterText = document.getElementById('filterText') as HTMLInputElement | null;
   const filterClear = document.getElementById('filterClear') as HTMLButtonElement | null;
   const filterEmptyTarget = document.getElementById('filterEmptyTarget') as HTMLInputElement | null;
+  const deeplTranslateBatch = document.getElementById('deeplTranslateBatch') as HTMLButtonElement | null;
 
   if (
     !viewport ||
@@ -519,7 +525,8 @@ function boot(): void {
     !stateDdSummary ||
     !filterText ||
     !filterClear ||
-    !filterEmptyTarget
+    !filterEmptyTarget ||
+    !deeplTranslateBatch
   ) {
     return;
   }
@@ -593,6 +600,7 @@ function boot(): void {
     } else {
       status.textContent = listLine;
     }
+    deeplTranslateBatch.disabled = uiState.editingLocked;
   };
 
   list = new VirtualList(viewport, spacer, (item) =>
@@ -650,6 +658,13 @@ function boot(): void {
 
   filterEmptyTarget.addEventListener('change', () => {
     schedulePostFilterToHost();
+  });
+
+  deeplTranslateBatch.addEventListener('click', () => {
+    if (uiState.editingLocked || viewMode !== 'editor') {
+      return;
+    }
+    vscode.postMessage({ type: 'deeplTranslateBatch' });
   });
 
   window.addEventListener('message', (ev: MessageEvent) => {

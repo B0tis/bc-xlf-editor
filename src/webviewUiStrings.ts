@@ -37,6 +37,10 @@ export function getWebviewUiStrings(): Record<string, string> {
     btnDeepLTitle: l10n.t(
       'Translate source into the target language with DeepL (requires API key). Does not save the file by itself.'
     ),
+    btnDeepLBatch: l10n.t('Translate all'),
+    btnDeepLBatchTitle: l10n.t(
+      'Translate every row with an empty target or state needs-translation (requires API key). Respects defer-until-save if enabled.'
+    ),
     targetLockedTitle: l10n.t('Resolve Git merge conflicts in the panel above first.'),
     statTransUnits: l10n.t('Trans-units'),
     statTotal: l10n.t('Total'),

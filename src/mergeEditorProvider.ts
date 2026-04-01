@@ -163,6 +163,21 @@ function parseTargetState(value: unknown): TargetState | undefined {
   return (TARGET_STATES as readonly string[]).includes(value) ? (value as TargetState) : undefined;
 }
 
+/** Non-empty source and (blank target or state needs-translation). */
+function collectIdsForDeepLBatch(doc: XlfDocument): string[] {
+  const ids: string[] = [];
+  for (const id of doc.orderedIds) {
+    const u = doc.units.get(id);
+    if (!u || !u.source.trim()) {
+      continue;
+    }
+    if (!u.target.trim() || u.targetState === 'needs-translation') {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 function positionAtOffset(text: string, offset: number): vscode.Position {
   const safe = Math.min(Math.max(0, offset), text.length);
   const head = text.slice(0, safe);
@@ -1099,14 +1114,18 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           const useFree = cfg.get('deeplUseFreeApi', true);
           const stateRaw = cfg.get<string>('deeplTargetState', 'needs-review-translation');
           const nextState = parseTargetState(stateRaw) ?? 'needs-review-translation';
+          const shortId = id.length > 48 ? `${id.slice(0, 45)}…` : id;
           try {
             await vscode.window.withProgress(
               {
                 location: vscode.ProgressLocation.Notification,
-                title: l10n.t('DeepL'),
+                title: l10n.t('DeepL translation'),
                 cancellable: false
               },
-              async () => {
+              async (progress) => {
+                progress.report({
+                  message: l10n.t('Translating {0}…', shortId)
+                });
                 const { text } = await translateWithDeepL(
                   key,
                   unit.source,
@@ -1126,6 +1145,103 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
                   await applyPartialOrFull(id);
                 }
                 postFilteredUnitsToWebview();
+              }
+            );
+          } catch (e) {
+            void vscode.window.showErrorMessage(
+              l10n.t('DeepL: {0}', e instanceof Error ? e.message : String(e))
+            );
+          }
+        })();
+        return;
+      }
+      if (msg?.type === 'deeplTranslateBatch' && working) {
+        void (async () => {
+          const key = await this.context.secrets.get(SECRET_DEEPL_KEY);
+          if (!key) {
+            void vscode.window.showWarningMessage(
+              l10n.t('Set a DeepL API key (command BC XLF: Set DeepL API key).')
+            );
+            return;
+          }
+          const ids = collectIdsForDeepLBatch(working);
+          if (ids.length === 0) {
+            void vscode.window.showInformationMessage(
+              l10n.t('No trans-units need DeepL (empty target or needs-translation).')
+            );
+            return;
+          }
+          const cfg = vscode.workspace.getConfiguration('bcXlf');
+          const useFree = cfg.get('deeplUseFreeApi', true);
+          const stateRaw = cfg.get<string>('deeplTargetState', 'needs-review-translation');
+          const nextState = parseTargetState(stateRaw) ?? 'needs-review-translation';
+          try {
+            await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: l10n.t('DeepL batch translation'),
+                cancellable: true
+              },
+              async (progress, token) => {
+                let translated = 0;
+                for (let i = 0; i < ids.length; i++) {
+                  if (token.isCancellationRequested) {
+                    break;
+                  }
+                  const id = ids[i];
+                  const unit = working!.units.get(id);
+                  if (!unit) {
+                    continue;
+                  }
+                  const label = id.length > 40 ? `${id.slice(0, 37)}…` : id;
+                  progress.report({
+                    message: l10n.t('DeepL: {0} of {1} — {2}', i + 1, ids.length, label)
+                  });
+                  try {
+                    const { text } = await translateWithDeepL(
+                      key,
+                      unit.source,
+                      working!.targetLanguage,
+                      useFree,
+                      working!.sourceLanguage
+                    );
+                    working!.units.set(id, {
+                      ...unit,
+                      target: text,
+                      targetState: nextState
+                    });
+                    translated++;
+                  } catch (err) {
+                    void vscode.window.showErrorMessage(
+                      l10n.t('DeepL: {0}', err instanceof Error ? err.message : String(err))
+                    );
+                    break;
+                  }
+                }
+                if (translated > 0) {
+                  if (applyEditsOnSaveOnly()) {
+                    pendingFlush = true;
+                    webviewPanel.title = `● ${panelBaseTitle}`;
+                  } else {
+                    await applyWorkingFullReplace();
+                  }
+                  postFilteredUnitsToWebview();
+                  if (token.isCancellationRequested) {
+                    void vscode.window.showInformationMessage(
+                      l10n.t('DeepL batch stopped ({0} of {1} translated).', translated, ids.length)
+                    );
+                  } else if (translated === ids.length) {
+                    void vscode.window.showInformationMessage(
+                      l10n.t('DeepL batch complete ({0} trans-units).', translated)
+                    );
+                  } else {
+                    void vscode.window.showInformationMessage(
+                      l10n.t('DeepL batch partial ({0} of {1} translated).', translated, ids.length)
+                    );
+                  }
+                } else if (token.isCancellationRequested) {
+                  void vscode.window.showInformationMessage(l10n.t('DeepL batch cancelled.'));
+                }
               }
             );
           } catch (e) {
