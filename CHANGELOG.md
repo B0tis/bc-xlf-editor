@@ -4,7 +4,27 @@ All notable changes to **BC XLF Editor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] — 2026-07-30
+
+### Changed
+
+- **XLIFF Sync–compatible matching** — Update from `.g.xlf` now follows the same match order as [vsc-xliff-sync](https://github.com/rvanbekkum/vsc-xliff-sync): id → Xliff Generator note + source → note + developer note → note alone → optional copy by source (+ developer note) → parse from developer note / copy from source. Units whose compiler hash id changed but whose Xliff Generator note still matches are **rematched** (translation kept under the new id) instead of being treated as deleted + newly empty.
+- Source-text changes default to **`needs-adaptation`** with an optional `XLIFF Sync` review note (`keep-translated`); `prefer-source` clears the target (`needs-translation`).
+- Surgical writes replace remapped units **in place** (old id → new id) for smaller Git diffs.
+
+### Added
+
+- Settings mirroring XLIFF Sync matching/fill options: `findByXliffGeneratorNoteAndSource`, `findByXliffGeneratorAndDeveloperNote`, `findByXliffGeneratorNote`, `findBySourceAndDeveloperNote`, `findBySource`, `parseFromDeveloperNote*`, `copyFromSourceFor*`, `detectSourceTextChanges`, `ignoreLineEndingTypeChanges`, `missingTranslation`, `addNeedsWorkTranslationNote`.
+- **PR preview builds** — GitHub Action `Build VSIX` packages a `.vsix` on every pull request (and via workflow_dispatch), uploads it as an artifact, and posts/updates a PR comment with the download link.
+
+### Fixed
+
+- Surgical updates no longer **double-indent** trans-units or insert **blank lines** between them (rewrite existing XML in place instead of re-serializing with a hard-coded indent + trailing newline). Extra `<target>` attributes such as `match-percent` / `origin-*` are preserved.
+- **Target metadata preserved** — attributes like `match-percent`, `origin-type`, and `origin-system` on `<target>` are kept through update (parse → merge → surgical/full write).
+- Update progress toast no longer sticks on **Saved.** while waiting for the completion dialog.
+
 ## [1.2.0] — 2026-03-30
+
 
 ### Added
 

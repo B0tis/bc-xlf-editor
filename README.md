@@ -1,6 +1,8 @@
 # BC XLF Editor
 
-VS Code extension for merging **Business Central** XLIFF translation files: compiler output (`.g.xlf`) with existing locale files (`de-DE.xlf`, etc.). Parsing uses a streaming SAX pipeline; merge output is sorted and normalized for predictable Git diffs.
+Merge / update from a generated **base** `.g.xlf` into existing locale XLIFF files. Parsing uses a streaming SAX pipeline; merge output is sorted and normalized for predictable Git diffs.
+
+Matching follows the same order as [XLIFF Sync](https://github.com/rvanbekkum/vsc-xliff-sync): **id**, then Xliff Generator note (+ source / developer note), then optional copy by source, then parse-from-developer-note / copy-from-source. That keeps translations when Business Central regenerates new `trans-unit` hash ids.
 
 ## Features
 
@@ -22,10 +24,17 @@ VS Code extension for merging **Business Central** XLIFF translation files: comp
 
 | ID | Default | Description |
 |----|---------|-------------|
-| `bcXlf.defaultStrategy` | `keep-translated` | When source changes: keep translations (mark review) or prefer empty target. |
+| `bcXlf.defaultStrategy` | `keep-translated` | When source changes: keep translations (`needs-adaptation`) or clear target. |
 | `bcXlf.sortById` | `true` | Sort `trans-unit` by id in output. |
 | `bcXlf.preserveRemoved` | `false` | Keep units only in the old translation file as `needs-review`. |
 | `bcXlf.openDiffAfterMerge` | `true` | Try to open Git diff for the saved file after merge. |
+| `bcXlf.findByXliffGeneratorNoteAndSource` | `true` | Rematch by Xliff Generator note + source when id changed. |
+| `bcXlf.findByXliffGeneratorAndDeveloperNote` | `true` | Rematch by Xliff Generator note + developer note. |
+| `bcXlf.findByXliffGeneratorNote` | `true` | Rematch by Xliff Generator note alone. |
+| `bcXlf.findBySource` / `findBySourceAndDeveloperNote` | `false` | Copy translation from another unit with the same source (optional + developer note). |
+| `bcXlf.detectSourceTextChanges` | `true` | Mark units when source text changed. |
+| `bcXlf.parseFromDeveloperNote` | `false` | Parse `lang=text` entries from developer notes. |
+| `bcXlf.copyFromSourceForSameLanguage` | `false` | Copy source → target when languages match. |
 
 ## Requirements
 
@@ -48,3 +57,5 @@ pnpm run vsix
 ```
 
 Install locally: **Extensions** → **⋯** → **Install from VSIX…**, or `code --install-extension <path-to-vsix>`.
+
+Pull requests also get an automatic **Build VSIX** GitHub Action: download the artifact from the workflow run (or follow the bot comment on the PR), then install the same way.

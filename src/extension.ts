@@ -6,7 +6,7 @@ import { mergeXlf } from './xlfMerger';
 import { serializeXlf } from './xlfSerializer';
 import { applyMergeSurgically } from './xlfSurgicalMerge';
 import { listBaseGxlCandidates } from './resolveBaseGxl';
-import { MergeOptions, MergeStats, XlfDocument } from './types';
+import { MergeOptions, MergeStats, XlfDocument, defaultMergeOptions } from './types';
 import { MergeEditorProvider } from './mergeEditorProvider';
 
 const l10n = vscode.l10n;
@@ -46,14 +46,58 @@ async function pickFile(title: string, defaultUri?: vscode.Uri): Promise<vscode.
   return result?.[0];
 }
 
+async function formatDocumentIfPossible(uri: vscode.Uri): Promise<boolean> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editorOptions =
+      vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uri.toString())
+        ?.options ?? { tabSize: 2, insertSpaces: true };
+    const formattingOptions: vscode.FormattingOptions = {
+      tabSize: typeof editorOptions.tabSize === 'number' ? editorOptions.tabSize : 2,
+      insertSpaces: editorOptions.insertSpaces !== false
+    };
+    const edits = await vscode.commands.executeCommand<vscode.TextEdit[] | undefined>(
+      'vscode.executeFormatDocumentProvider',
+      uri,
+      formattingOptions
+    );
+    if (!edits?.length) {
+      return false;
+    }
+    const we = new vscode.WorkspaceEdit();
+    we.set(uri, edits);
+    const applied = await vscode.workspace.applyEdit(we);
+    if (applied) {
+      await (await vscode.workspace.openTextDocument(uri)).save();
+    }
+    return applied;
+  } catch (e) {
+    console.warn('bc-xlf-editor: format after update failed', e);
+    return false;
+  }
+}
+
+/** Ensure the open editor buffer matches `text` after an external disk write. */
+async function syncOpenDocumentToText(uri: vscode.Uri, text: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  if (doc.getText() === text) {
+    return;
+  }
+  const we = new vscode.WorkspaceEdit();
+  const full = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+  we.replace(uri, full, text);
+  await vscode.workspace.applyEdit(we);
+  await doc.save();
+}
+
 async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<void> {
   const baseContent = await fs.readFile(baseUri.fsPath, 'utf-8');
   const customContent = await fs.readFile(customUri.fsPath, 'utf-8');
   const n = Math.max(countTransUnits(baseContent), countTransUnits(customContent));
 
-  const work = async (
+  const runUpdate = async (
     progress?: vscode.Progress<{ message?: string; increment?: number }>
-  ): Promise<void> => {
+  ): Promise<MergeStats> => {
     const report = (message: string) => progress?.report({ message });
 
     const config = vscode.workspace.getConfiguration('bcXlf');
@@ -80,11 +124,30 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       { forceFullParse: true }
     );
 
-    const options: MergeOptions = {
+    const options: MergeOptions = defaultMergeOptions({
       strategy: config.get('defaultStrategy', 'keep-translated'),
       sortOutput: config.get('sortById', true),
-      preserveRemoved: config.get('preserveRemoved', false)
-    };
+      preserveRemoved: config.get('preserveRemoved', false),
+      findByXliffGeneratorNoteAndSource: config.get('findByXliffGeneratorNoteAndSource', true),
+      findByXliffGeneratorAndDeveloperNote: config.get(
+        'findByXliffGeneratorAndDeveloperNote',
+        true
+      ),
+      findByXliffGeneratorNote: config.get('findByXliffGeneratorNote', true),
+      findBySourceAndDeveloperNote: config.get('findBySourceAndDeveloperNote', false),
+      findBySource: config.get('findBySource', false),
+      parseFromDeveloperNote: config.get('parseFromDeveloperNote', false),
+      parseFromDeveloperNoteOverwrite: config.get('parseFromDeveloperNoteOverwrite', false),
+      parseFromDeveloperNoteSeparator: config.get('parseFromDeveloperNoteSeparator', '|'),
+      parseFromDeveloperNoteTrimCharacters: config.get('parseFromDeveloperNoteTrimCharacters', ''),
+      copyFromSourceForSameLanguage: config.get('copyFromSourceForSameLanguage', false),
+      copyFromSourceForLanguages: config.get('copyFromSourceForLanguages', []),
+      copyFromSourceOverwrite: config.get('copyFromSourceOverwrite', false),
+      detectSourceTextChanges: config.get('detectSourceTextChanges', true),
+      ignoreLineEndingTypeChanges: config.get('ignoreLineEndingTypeChanges', false),
+      missingTranslation: config.get('missingTranslation', ''),
+      addNeedsWorkTranslationNote: config.get('addNeedsWorkTranslationNote', true)
+    });
 
     report(l10n.t('Update translation…'));
     const result = mergeXlf(base, custom, options);
@@ -108,52 +171,60 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
     await fs.writeFile(customUri.fsPath, output, { encoding: 'utf-8' });
     lastStats = result.stats;
 
-    report(l10n.t('Saved.'));
-
-    const { stats } = result;
-    const msg = l10n.t(
-      'Update complete: +{0} new · {1} source changes · −{2} removed',
-      stats.added.length,
-      stats.conflicts.length,
-      stats.removed.length
-    );
-
-    const openDiff = config.get('openDiffAfterMerge', true);
-    if (openDiff) {
-      try {
-        await vscode.commands.executeCommand('git.openChange', customUri);
-      } catch {
-        /* Git extension not active */
+    if (config.get('formatAfterUpdate', false)) {
+      report(l10n.t('Format translation file…'));
+      await syncOpenDocumentToText(customUri, output);
+      const formatted = await formatDocumentIfPossible(customUri);
+      if (!formatted) {
+        console.warn(
+          'bc-xlf-editor: formatAfterUpdate is on but no format edits were applied (install an XML formatter?).'
+        );
       }
     }
 
-    const labelOpenDiff = l10n.t('Open Git diff');
-    const labelDetails = l10n.t('Details');
-    const action = await vscode.window.showInformationMessage(msg, labelOpenDiff, labelDetails);
-    if (action === labelOpenDiff) {
-      try {
-        await vscode.commands.executeCommand('git.openChange', customUri);
-      } catch {
-        await vscode.window.showWarningMessage(l10n.t('Could not open Git diff.'));
-      }
-    } else if (action === labelDetails) {
-      await vscode.commands.executeCommand('bcXlf.showSummary');
-    }
+    return result.stats;
   };
 
-  if (n > 1000) {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: l10n.t('BC XLF Editor'),
-        cancellable: false
-      },
-      async (progress) => {
-        await work(progress);
-      }
-    );
-  } else {
-    await work();
+  const stats =
+    n > 1000
+      ? await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: l10n.t('BC XLF Editor'),
+            cancellable: false
+          },
+          async (progress) => runUpdate(progress)
+        )
+      : await runUpdate();
+
+  const config = vscode.workspace.getConfiguration('bcXlf');
+  const msg = l10n.t(
+    'Update complete: +{0} new · {1} rematched · {2} source changes · −{3} removed',
+    stats.added.length,
+    stats.remapped.length,
+    stats.conflicts.length,
+    stats.removed.length
+  );
+
+  if (config.get('openDiffAfterMerge', true)) {
+    try {
+      await vscode.commands.executeCommand('git.openChange', customUri);
+    } catch {
+      /* Git extension not active */
+    }
+  }
+
+  const labelOpenDiff = l10n.t('Open Git diff');
+  const labelDetails = l10n.t('Details');
+  const action = await vscode.window.showInformationMessage(msg, labelOpenDiff, labelDetails);
+  if (action === labelOpenDiff) {
+    try {
+      await vscode.commands.executeCommand('git.openChange', customUri);
+    } catch {
+      await vscode.window.showWarningMessage(l10n.t('Could not open Git diff.'));
+    }
+  } else if (action === labelDetails) {
+    await vscode.commands.executeCommand('bcXlf.showSummary');
   }
 }
 
@@ -239,11 +310,15 @@ export function activate(context: vscode.ExtensionContext): void {
           l10n.t('Total: {0}', s.total),
           l10n.t('Unchanged: {0}', s.unchanged),
           l10n.t('New (base only): {0}', s.added.length),
+          l10n.t('Rematched (id changed): {0}', s.remapped.length),
           l10n.t('Conflicts (source changed): {0}', s.conflicts.length),
           l10n.t('Removed (custom only): {0}', s.removed.length),
           '',
           l10n.t('— New —'),
           ...s.added.map((id) => `  ${id}`),
+          '',
+          l10n.t('— Rematched —'),
+          ...s.remapped.map((r) => `  ${r.fromId} → ${r.toId}`),
           '',
           l10n.t('— Conflicts —'),
           ...s.conflicts.map((id) => `  ${id}`),

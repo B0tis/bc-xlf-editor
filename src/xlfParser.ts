@@ -331,6 +331,7 @@ export async function parseXlf(
 
     let currentUnit: Partial<TransUnit> | null = null;
     let currentExtraAttrs: Record<string, string> | undefined;
+    let currentTargetAttrs: Record<string, string> | undefined;
     let currentText = '';
     let inSource = false;
     let inTarget = false;
@@ -355,7 +356,7 @@ export async function parseXlf(
         if (!id) {
           return;
         }
-        const fixed = new Set(['id', 'size-unit', 'translate', 'xml:space']);
+        const fixed = new Set(['id']);
         const extra: Record<string, string> = {};
         for (const [k, v] of Object.entries(attrs)) {
           if (!fixed.has(k)) {
@@ -363,6 +364,7 @@ export async function parseXlf(
           }
         }
         currentExtraAttrs = Object.keys(extra).length ? extra : undefined;
+        currentTargetAttrs = undefined;
         currentUnit = {
           id,
           source: '',
@@ -387,6 +389,13 @@ export async function parseXlf(
         currentText = '';
         const st = attrs['state'] as TargetState | undefined;
         currentUnit.targetState = st ?? 'translated';
+        const tExtra: Record<string, string> = {};
+        for (const [k, v] of Object.entries(attrs)) {
+          if (k !== 'state') {
+            tExtra[k] = v;
+          }
+        }
+        currentTargetAttrs = Object.keys(tExtra).length ? tExtra : undefined;
       } else if (isNote(node.name)) {
         inNote = true;
         currentText = '';
@@ -415,7 +424,10 @@ export async function parseXlf(
         if (currentUnit) {
           if (noteFrom === 'developer') {
             currentUnit.developerNote = currentText;
+          } else if (noteFrom === 'xliff sync') {
+            currentUnit.syncNote = currentText;
           } else {
+            // Xliff Generator (and any other non-developer note)
             currentUnit.note = currentText;
           }
         }
@@ -429,6 +441,9 @@ export async function parseXlf(
         if (currentExtraAttrs) {
           unit.extraAttrs = currentExtraAttrs;
         }
+        if (currentTargetAttrs) {
+          unit.targetAttrs = currentTargetAttrs;
+        }
         doc.units.set(unit.id, unit);
         doc.orderedIds.push(unit.id);
         parsed++;
@@ -437,6 +452,7 @@ export async function parseXlf(
         }
         currentUnit = null;
         currentExtraAttrs = undefined;
+        currentTargetAttrs = undefined;
         sawTarget = false;
       }
     };

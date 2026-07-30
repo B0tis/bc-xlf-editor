@@ -1,4 +1,5 @@
 import { XlfDocument, MergeResult, TransUnit } from './types';
+import { formatTransUnit } from './xlfUnitFormat';
 
 const XML_DECL = '<?xml version="1.0" encoding="utf-8"?>\n';
 const INDENT = '  ';
@@ -26,7 +27,13 @@ export function serializeXlf(header: XlfDocument, result: MergeResult): string {
     if (!unit) {
       continue;
     }
-    appendTransUnit(parts, unit);
+    parts.push(
+      formatTransUnit(unit, {
+        unitIndent: INDENT.repeat(4),
+        newline: '\n',
+        trailingNewline: true
+      })
+    );
   }
 
   parts.push(`${INDENT}${INDENT}${INDENT}</group>\n`);
@@ -37,42 +44,13 @@ export function serializeXlf(header: XlfDocument, result: MergeResult): string {
   return parts.join('');
 }
 
-function appendTransUnit(parts: string[], unit: TransUnit): void {
-  const openTag = buildTransUnitOpen(unit);
-  parts.push(`${INDENT.repeat(3)}${openTag}\n`);
-  parts.push(`${INDENT.repeat(4)}<source>${esc(unit.source)}</source>\n`);
-  parts.push(
-    `${INDENT.repeat(4)}<target state="${esc(unit.targetState)}">${esc(unit.target)}</target>\n`
-  );
-  parts.push(
-    `${INDENT.repeat(4)}<note from="Developer" annotates="general" priority="2">${esc(
-      unit.developerNote ?? ''
-    )}</note>\n`
-  );
-  parts.push(
-    `${INDENT.repeat(4)}<note from="Xliff Generator" annotates="general" priority="3">${esc(
-      unit.note ?? ''
-    )}</note>\n`
-  );
-  parts.push(`${INDENT.repeat(3)}</trans-unit>\n`);
-}
-
-/** One trans-unit block, same canonical shape as {@link serializeXlf} (for partial buffer replace). */
+/** One trans-unit block for partial buffer replace / editor edits. Prefer rewrite for updates. */
 export function serializeTransUnit(unit: TransUnit): string {
-  const parts: string[] = [];
-  appendTransUnit(parts, unit);
-  return parts.join('');
-}
-
-function buildTransUnitOpen(unit: TransUnit): string {
-  const base =
-    `<trans-unit id="${esc(unit.id)}" ` +
-    `size-unit="char" translate="yes" ` +
-    `xml:space="preserve"`;
-  const extra = unit.extraAttrs ?? {};
-  const keys = Object.keys(extra).sort();
-  const extraStr = keys.map((k) => ` ${k}="${esc(extra[k])}"`).join('');
-  return `${base}${extraStr}>`;
+  return formatTransUnit(unit, {
+    unitIndent: INDENT.repeat(4),
+    newline: '\n',
+    trailingNewline: false
+  });
 }
 
 function esc(str: string): string {

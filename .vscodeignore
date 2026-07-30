@@ -1,13 +1,17 @@
 bc-xlf-icon-1.jpg
 .vscode/**
 .vscode-test/**
+.github/**
 out/**
 node_modules/**
 src/**
+scripts/**
 .gitignore
+.npmrc
 .yarnrc
 esbuild.js
 esbuild-webview.js
+pnpm-lock.yaml
 webview/mergeEditor.ts
 webview/virtualList.ts
 vsc-extension-quickstart.md
@@ -16,3 +20,4 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+*.vsix
