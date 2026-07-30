@@ -12,6 +12,7 @@
   "config.preserveRemoved.description": "Keep removed units as needs-review instead of deleting",
   "config.openDiffAfterMerge.description": "Open Git diff after update automatically",
   "config.surgicalMerge.description": "Write only changed trans-units (smaller Git diffs). Falls back to full file if a surgical write fails.",
+  "config.formatAfterUpdate.description": "After update, run the editor's Format Document provider on the translation file (needs an XML/XLF formatter extension). Off by default — full-file format often creates large unrelated diffs.",
   "config.deeplUseFreeApi.description": "Use DeepL api-free.deepl.com (Pro key uses api.deepl.com when off).",
   "config.deeplTargetState.description": "Target state set on the trans-unit after a DeepL translation.",
   "config.applyEditsOnSaveOnly.description": "In the BC XLF Editor, keep edits in the panel until you save (Ctrl+S); then write them to the XML buffer. When off, each edit updates the buffer immediately.",

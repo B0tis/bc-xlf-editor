@@ -12,6 +12,7 @@
   "config.preserveRemoved.description": "Entfernte Units als needs-review behalten statt löschen",
   "config.openDiffAfterMerge.description": "Git-Diff nach Update automatisch öffnen",
   "config.surgicalMerge.description": "Nur geänderte Trans-Units schreiben (kleinere Git-Diffs). Fallback auf volle Serialisierung bei Fehlern.",
+  "config.formatAfterUpdate.description": "Nach dem Update den Format-Document-Provider der Editor-Umgebung auf die Übersetzungsdatei anwenden (XML/XLF-Formatter-Extension nötig). Standardmäßig aus — volles Formatieren erzeugt oft große, unzusammenhängende Diffs.",
   "config.deeplUseFreeApi.description": "DeepL api-free.deepl.com verwenden (Pro-Schlüssel: api.deepl.com wenn aus).",
   "config.deeplTargetState.description": "Target-Status nach einer DeepL-Übersetzung.",
   "config.applyEditsOnSaveOnly.description": "Im BC XLF-Editor Änderungen erst bei Speichern (Ctrl+S) in den XML-Puffer schreiben.",

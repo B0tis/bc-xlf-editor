@@ -46,6 +46,50 @@ async function pickFile(title: string, defaultUri?: vscode.Uri): Promise<vscode.
   return result?.[0];
 }
 
+async function formatDocumentIfPossible(uri: vscode.Uri): Promise<boolean> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editorOptions =
+      vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === uri.toString())
+        ?.options ?? { tabSize: 2, insertSpaces: true };
+    const formattingOptions: vscode.FormattingOptions = {
+      tabSize: typeof editorOptions.tabSize === 'number' ? editorOptions.tabSize : 2,
+      insertSpaces: editorOptions.insertSpaces !== false
+    };
+    const edits = await vscode.commands.executeCommand<vscode.TextEdit[] | undefined>(
+      'vscode.executeFormatDocumentProvider',
+      uri,
+      formattingOptions
+    );
+    if (!edits?.length) {
+      return false;
+    }
+    const we = new vscode.WorkspaceEdit();
+    we.set(uri, edits);
+    const applied = await vscode.workspace.applyEdit(we);
+    if (applied) {
+      await (await vscode.workspace.openTextDocument(uri)).save();
+    }
+    return applied;
+  } catch (e) {
+    console.warn('bc-xlf-editor: format after update failed', e);
+    return false;
+  }
+}
+
+/** Ensure the open editor buffer matches `text` after an external disk write. */
+async function syncOpenDocumentToText(uri: vscode.Uri, text: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  if (doc.getText() === text) {
+    return;
+  }
+  const we = new vscode.WorkspaceEdit();
+  const full = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+  we.replace(uri, full, text);
+  await vscode.workspace.applyEdit(we);
+  await doc.save();
+}
+
 async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<void> {
   const baseContent = await fs.readFile(baseUri.fsPath, 'utf-8');
   const customContent = await fs.readFile(customUri.fsPath, 'utf-8');
@@ -126,6 +170,17 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
 
     await fs.writeFile(customUri.fsPath, output, { encoding: 'utf-8' });
     lastStats = result.stats;
+
+    if (config.get('formatAfterUpdate', false)) {
+      report(l10n.t('Format translation file…'));
+      await syncOpenDocumentToText(customUri, output);
+      const formatted = await formatDocumentIfPossible(customUri);
+      if (!formatted) {
+        console.warn(
+          'bc-xlf-editor: formatAfterUpdate is on but no format edits were applied (install an XML formatter?).'
+        );
+      }
+    }
 
     report(l10n.t('Saved.'));
 
