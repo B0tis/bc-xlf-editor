@@ -14,6 +14,8 @@ export interface TransUnit {
   syncNote?: string;
   /** Extra trans-unit attributes (e.g. al-object-target) for stable round-trip */
   extraAttrs?: Record<string, string>;
+  /** Extra `<target>` attributes besides `state` (e.g. match-percent, origin-*). */
+  targetAttrs?: Record<string, string>;
 }
 
 export type TargetState =

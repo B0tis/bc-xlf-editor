@@ -1,5 +1,11 @@
 import { buildTransUnitSpanIndex } from './xlfParser';
-import { serializeTransUnit } from './xlfSerializer';
+import {
+  detectNewline,
+  detectTransUnitIndent,
+  lineIndentAt,
+  rewriteTransUnitBlock,
+  formatTransUnit
+} from './xlfUnitFormat';
 import type { MergeOptions, MergeResult, MergeStats, TransUnit, XlfDocument } from './types';
 import { defaultMergeOptions } from './types';
 
@@ -35,7 +41,8 @@ function unitsEqual(a: TransUnit, b: TransUnit): boolean {
     (a.note ?? '') === (b.note ?? '') &&
     (a.developerNote ?? '') === (b.developerNote ?? '') &&
     (a.syncNote ?? '') === (b.syncNote ?? '') &&
-    JSON.stringify(sortRecord(a.extraAttrs)) === JSON.stringify(sortRecord(b.extraAttrs))
+    JSON.stringify(sortRecord(a.extraAttrs)) === JSON.stringify(sortRecord(b.extraAttrs)) &&
+    JSON.stringify(sortRecord(a.targetAttrs)) === JSON.stringify(sortRecord(b.targetAttrs))
   );
 }
 
@@ -64,7 +71,7 @@ function findGroupBodyInsertOffset(content: string): number {
 /**
  * Applies merge result by replacing only changed trans-units, deleting removed ones, and appending new ones.
  * Preserves document order for existing units (ignores {@link MergeOptions.sortOutput} reordering).
- * Remapped units (matched by note/source with a new id) replace the old block in place.
+ * Remapped / updated units are rewritten in place (keeps indent, blank lines, and target attrs).
  */
 export function applyMergeSurgically(
   buffer: string,
@@ -88,11 +95,27 @@ export function applyMergeSurgically(
     .filter((s): s is { start: number; end: number } => Boolean(s))
     .sort((a, b) => b.start - a.start);
   for (const sp of removeSpans) {
-    work = work.slice(0, sp.start) + work.slice(sp.end);
+    // Drop the unit and a single following newline so we don't leave blank holes.
+    let end = sp.end;
+    if (work[end] === '\r' && work[end + 1] === '\n') {
+      end += 2;
+    } else if (work[end] === '\n') {
+      end += 1;
+    }
+    // If the line indent before the unit would leave a blank indented line, also
+    // remove leading indent only when the previous char is a newline (unit owned the line).
+    let start = sp.start;
+    const indent = lineIndentAt(work, sp.start);
+    if (indent.length > 0 && start >= indent.length) {
+      const before = work[start - indent.length - 1];
+      if (before === '\n' || before === '\r' || start === indent.length) {
+        start -= indent.length;
+      }
+    }
+    work = work.slice(0, start) + work.slice(end);
   }
 
   const spans = buildTransUnitSpanIndex(work);
-
   const updates: Array<{ start: number; end: number; text: string }> = [];
 
   for (const remap of stats.remapped) {
@@ -106,7 +129,12 @@ export function applyMergeSurgically(
         `Surgical merge: remapped source trans-unit "${remap.fromId}" not found in buffer.`
       );
     }
-    updates.push({ start: span.start, end: span.end, text: serializeTransUnit(merged) });
+    const existing = work.slice(span.start, span.end);
+    updates.push({
+      start: span.start,
+      end: span.end,
+      text: rewriteTransUnitBlock(existing, merged)
+    });
   }
 
   for (const id of custom.orderedIds) {
@@ -125,7 +153,12 @@ export function applyMergeSurgically(
     if (!span) {
       throw new Error(`Surgical merge: trans-unit "${id}" not found in buffer after deletes.`);
     }
-    updates.push({ start: span.start, end: span.end, text: serializeTransUnit(merged) });
+    const existing = work.slice(span.start, span.end);
+    updates.push({
+      start: span.start,
+      end: span.end,
+      text: rewriteTransUnitBlock(existing, merged)
+    });
   }
   updates.sort((a, b) => b.start - a.start);
   for (const u of updates) {
@@ -135,14 +168,22 @@ export function applyMergeSurgically(
   const toAppend = stats.added.filter((id) => !remappedTo.has(id));
   if (toAppend.length > 0) {
     const insertAt = findGroupBodyInsertOffset(work);
-    const block = toAppend.map((id) => {
-      const u = result.units.get(id);
-      if (!u) {
-        throw new Error(`Surgical merge: missing merged unit "${id}".`);
-      }
-      return serializeTransUnit(u);
-    });
-    work = work.slice(0, insertAt) + block.join('') + work.slice(insertAt);
+    const unitIndent = detectTransUnitIndent(work);
+    const nl = detectNewline(work);
+    const block = toAppend
+      .map((id) => {
+        const u = result.units.get(id);
+        if (!u) {
+          throw new Error(`Surgical merge: missing merged unit "${id}".`);
+        }
+        return formatTransUnit(u, {
+          unitIndent,
+          newline: nl,
+          trailingNewline: true
+        });
+      })
+      .join('');
+    work = work.slice(0, insertAt) + block + work.slice(insertAt);
   }
 
   work = replaceFileHeaderAttributes(work, header);

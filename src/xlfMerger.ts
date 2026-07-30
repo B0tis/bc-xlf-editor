@@ -168,6 +168,15 @@ function mergeExtraAttrs(
   return Object.keys(out).length ? out : undefined;
 }
 
+function mergeTargetAttrs(
+  custom: TransUnit | undefined
+): Record<string, string> | undefined {
+  if (!custom?.targetAttrs || !Object.keys(custom.targetAttrs).length) {
+    return undefined;
+  }
+  return { ...custom.targetAttrs };
+}
+
 /**
  * Synchronize base (`.g.xlf`) into a custom translation file using XLIFF Sync–compatible matching.
  *
@@ -343,7 +352,8 @@ export function mergeXlf(
       note: baseUnit.note ?? matchedUnit.note,
       developerNote: baseUnit.developerNote ?? matchedUnit.developerNote,
       syncNote,
-      extraAttrs: mergeExtraAttrs(baseUnit, matchedUnit)
+      extraAttrs: mergeExtraAttrs(baseUnit, matchedUnit),
+      targetAttrs: mergeTargetAttrs(matchedUnit)
     };
 
     let sourceChanged = false;

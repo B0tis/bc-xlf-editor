@@ -14,7 +14,8 @@ import {
   parseXlf
 } from './xlfParser';
 import { translateWithDeepL } from './deepl';
-import { serializeTransUnit, serializeXlf } from './xlfSerializer';
+import { serializeXlf } from './xlfSerializer';
+import { rewriteTransUnitBlock } from './xlfUnitFormat';
 import { applyTransUnitDiffSurgically } from './xlfSurgicalMerge';
 import type { MergeResult, TargetState, TransUnit, XlfDocument } from './types';
 
@@ -830,7 +831,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       if (span) {
         const slice = buffer.slice(span.start, span.end);
         if (slice.includes(`id="${unit.id}"`)) {
-          const fragment = serializeTransUnit(unit);
+          const fragment = rewriteTransUnitBlock(slice, unit);
           const edit = new vscode.WorkspaceEdit();
           edit.replace(
             document.uri,

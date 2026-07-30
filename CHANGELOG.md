@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Settings mirroring XLIFF Sync matching/fill options: `findByXliffGeneratorNoteAndSource`, `findByXliffGeneratorAndDeveloperNote`, `findByXliffGeneratorNote`, `findBySourceAndDeveloperNote`, `findBySource`, `parseFromDeveloperNote*`, `copyFromSourceFor*`, `detectSourceTextChanges`, `ignoreLineEndingTypeChanges`, `missingTranslation`, `addNeedsWorkTranslationNote`.
 - **PR preview builds** — GitHub Action `Build VSIX` packages a `.vsix` on every pull request (and via workflow_dispatch), uploads it as an artifact, and posts/updates a PR comment with the download link.
 
+### Fixed
+
+- Surgical updates no longer **double-indent** trans-units or insert **blank lines** between them (rewrite existing XML in place instead of re-serializing with a hard-coded indent + trailing newline). Extra `<target>` attributes such as `match-percent` / `origin-*` are preserved.
+
 ## [1.2.0] — 2026-03-30
 
 

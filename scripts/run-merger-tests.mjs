@@ -194,6 +194,74 @@ test('surgical merge replaces remapped id in place', () => {
   assert.ok(out.includes('Kunde'), out);
 });
 
+test('surgical update does not double-indent or insert blank lines', () => {
+  const buffer = [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">',
+    '  <file source-language="en-US" target-language="de-DE" original="App" datatype="xml">',
+    '    <body>',
+    '      <group id="body">',
+    '        <trans-unit id="a" translate="yes" xml:space="preserve">',
+    '          <source>Hello</source>',
+    '          <target state="translated" match-percent="100" origin-type="mt">Hallo</target>',
+    '          <note from="Developer" annotates="general" priority="2"></note>',
+    '          <note from="Xliff Generator" annotates="general" priority="3">Label Hello</note>',
+    '        </trans-unit>',
+    '        <trans-unit id="b" translate="yes" xml:space="preserve">',
+    '          <source>Bye</source>',
+    '          <target state="translated">Tschüss</target>',
+    '          <note from="Developer" annotates="general" priority="2"></note>',
+    '          <note from="Xliff Generator" annotates="general" priority="3">Label Bye</note>',
+    '        </trans-unit>',
+    '      </group>',
+    '    </body>',
+    '  </file>',
+    '</xliff>'
+  ].join('\n');
+
+  const base = doc([
+    unit({ id: 'a', source: 'Hello world', note: 'Label Hello' }),
+    unit({ id: 'b', source: 'Bye', note: 'Label Bye' })
+  ]);
+  const custom = doc([
+    unit({
+      id: 'a',
+      source: 'Hello',
+      target: 'Hallo',
+      targetState: 'translated',
+      note: 'Label Hello',
+      targetAttrs: { 'match-percent': '100', 'origin-type': 'mt' }
+    }),
+    unit({
+      id: 'b',
+      source: 'Bye',
+      target: 'Tschüss',
+      targetState: 'translated',
+      note: 'Label Bye'
+    })
+  ]);
+  const options = defaultMergeOptions({ sortOutput: false });
+  const result = mergeXlf(base, custom, options);
+  const header = {
+    ...base,
+    targetLanguage: custom.targetLanguage,
+    original: custom.original || base.original
+  };
+  const out = applyMergeSurgically(buffer, custom, result, result.stats, options, header);
+
+  assert.ok(out.includes('        <trans-unit id="a"'), out);
+  assert.ok(!out.includes('              <trans-unit'), out);
+  assert.ok(out.includes('match-percent="100"'), out);
+  assert.ok(out.includes('origin-type="mt"'), out);
+  assert.ok(out.includes('needs-adaptation'), out);
+  // No blank line between the two units
+  assert.ok(
+    out.includes('</trans-unit>\n        <trans-unit id="b"'),
+    out
+  );
+  assert.ok(!out.includes('</trans-unit>\n\n        <trans-unit'), out);
+});
+
 let failed = 0;
 for (const t of tests) {
   try {
