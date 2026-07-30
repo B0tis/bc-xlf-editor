@@ -415,7 +415,10 @@ export async function parseXlf(
         if (currentUnit) {
           if (noteFrom === 'developer') {
             currentUnit.developerNote = currentText;
+          } else if (noteFrom === 'xliff sync') {
+            currentUnit.syncNote = currentText;
           } else {
+            // Xliff Generator (and any other non-developer note)
             currentUnit.note = currentText;
           }
         }

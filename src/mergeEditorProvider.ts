@@ -50,7 +50,8 @@ function asMergeResult(doc: XlfDocument): MergeResult {
       added: [],
       removed: [],
       conflicts: [],
-      unchanged: doc.units.size
+      unchanged: doc.units.size,
+      remapped: []
     }
   };
 }

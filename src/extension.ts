@@ -6,7 +6,7 @@ import { mergeXlf } from './xlfMerger';
 import { serializeXlf } from './xlfSerializer';
 import { applyMergeSurgically } from './xlfSurgicalMerge';
 import { listBaseGxlCandidates } from './resolveBaseGxl';
-import { MergeOptions, MergeStats, XlfDocument } from './types';
+import { MergeOptions, MergeStats, XlfDocument, defaultMergeOptions } from './types';
 import { MergeEditorProvider } from './mergeEditorProvider';
 
 const l10n = vscode.l10n;
@@ -80,11 +80,30 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       { forceFullParse: true }
     );
 
-    const options: MergeOptions = {
+    const options: MergeOptions = defaultMergeOptions({
       strategy: config.get('defaultStrategy', 'keep-translated'),
       sortOutput: config.get('sortById', true),
-      preserveRemoved: config.get('preserveRemoved', false)
-    };
+      preserveRemoved: config.get('preserveRemoved', false),
+      findByXliffGeneratorNoteAndSource: config.get('findByXliffGeneratorNoteAndSource', true),
+      findByXliffGeneratorAndDeveloperNote: config.get(
+        'findByXliffGeneratorAndDeveloperNote',
+        true
+      ),
+      findByXliffGeneratorNote: config.get('findByXliffGeneratorNote', true),
+      findBySourceAndDeveloperNote: config.get('findBySourceAndDeveloperNote', false),
+      findBySource: config.get('findBySource', false),
+      parseFromDeveloperNote: config.get('parseFromDeveloperNote', false),
+      parseFromDeveloperNoteOverwrite: config.get('parseFromDeveloperNoteOverwrite', false),
+      parseFromDeveloperNoteSeparator: config.get('parseFromDeveloperNoteSeparator', '|'),
+      parseFromDeveloperNoteTrimCharacters: config.get('parseFromDeveloperNoteTrimCharacters', ''),
+      copyFromSourceForSameLanguage: config.get('copyFromSourceForSameLanguage', false),
+      copyFromSourceForLanguages: config.get('copyFromSourceForLanguages', []),
+      copyFromSourceOverwrite: config.get('copyFromSourceOverwrite', false),
+      detectSourceTextChanges: config.get('detectSourceTextChanges', true),
+      ignoreLineEndingTypeChanges: config.get('ignoreLineEndingTypeChanges', false),
+      missingTranslation: config.get('missingTranslation', '%EMPTY%'),
+      addNeedsWorkTranslationNote: config.get('addNeedsWorkTranslationNote', true)
+    });
 
     report(l10n.t('Update translation…'));
     const result = mergeXlf(base, custom, options);
@@ -112,8 +131,9 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
 
     const { stats } = result;
     const msg = l10n.t(
-      'Update complete: +{0} new · {1} source changes · −{2} removed',
+      'Update complete: +{0} new · {1} rematched · {2} source changes · −{3} removed',
       stats.added.length,
+      stats.remapped.length,
       stats.conflicts.length,
       stats.removed.length
     );
@@ -239,11 +259,15 @@ export function activate(context: vscode.ExtensionContext): void {
           l10n.t('Total: {0}', s.total),
           l10n.t('Unchanged: {0}', s.unchanged),
           l10n.t('New (base only): {0}', s.added.length),
+          l10n.t('Rematched (id changed): {0}', s.remapped.length),
           l10n.t('Conflicts (source changed): {0}', s.conflicts.length),
           l10n.t('Removed (custom only): {0}', s.removed.length),
           '',
           l10n.t('— New —'),
           ...s.added.map((id) => `  ${id}`),
+          '',
+          l10n.t('— Rematched —'),
+          ...s.remapped.map((r) => `  ${r.fromId} → ${r.toId}`),
           '',
           l10n.t('— Conflicts —'),
           ...s.conflicts.map((id) => `  ${id}`),

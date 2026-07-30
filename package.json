@@ -10,7 +10,7 @@
   },
   "homepage": "https://github.com/B0tis/bc-xlf-editor#readme",
   "icon": "images/icon.png",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -136,6 +136,89 @@
           "type": "boolean",
           "default": true,
           "description": "%config.applyEditsOnSaveOnly.description%"
+        },
+        "bcXlf.findByXliffGeneratorNoteAndSource": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.findByXliffGeneratorNoteAndSource.description%"
+        },
+        "bcXlf.findByXliffGeneratorAndDeveloperNote": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.findByXliffGeneratorAndDeveloperNote.description%"
+        },
+        "bcXlf.findByXliffGeneratorNote": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.findByXliffGeneratorNote.description%"
+        },
+        "bcXlf.findBySourceAndDeveloperNote": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.findBySourceAndDeveloperNote.description%"
+        },
+        "bcXlf.findBySource": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.findBySource.description%"
+        },
+        "bcXlf.parseFromDeveloperNote": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.parseFromDeveloperNote.description%"
+        },
+        "bcXlf.parseFromDeveloperNoteOverwrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.parseFromDeveloperNoteOverwrite.description%"
+        },
+        "bcXlf.parseFromDeveloperNoteSeparator": {
+          "type": "string",
+          "default": "|",
+          "description": "%config.parseFromDeveloperNoteSeparator.description%"
+        },
+        "bcXlf.parseFromDeveloperNoteTrimCharacters": {
+          "type": "string",
+          "default": "",
+          "description": "%config.parseFromDeveloperNoteTrimCharacters.description%"
+        },
+        "bcXlf.copyFromSourceForSameLanguage": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.copyFromSourceForSameLanguage.description%"
+        },
+        "bcXlf.copyFromSourceForLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%config.copyFromSourceForLanguages.description%"
+        },
+        "bcXlf.copyFromSourceOverwrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.copyFromSourceOverwrite.description%"
+        },
+        "bcXlf.detectSourceTextChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.detectSourceTextChanges.description%"
+        },
+        "bcXlf.ignoreLineEndingTypeChanges": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.ignoreLineEndingTypeChanges.description%"
+        },
+        "bcXlf.missingTranslation": {
+          "type": "string",
+          "default": "%EMPTY%",
+          "description": "%config.missingTranslation.description%"
+        },
+        "bcXlf.addNeedsWorkTranslationNote": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.addNeedsWorkTranslationNote.description%"
         }
       }
     }
@@ -154,7 +237,8 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:merger": "pnpm run compile-tests && node scripts/run-merger-tests.mjs"
   },
   "devDependencies": {
     "sax": "^1.4.1",

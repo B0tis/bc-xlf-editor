@@ -44,6 +44,13 @@ function appendTransUnit(parts: string[], unit: TransUnit): void {
   parts.push(
     `${INDENT.repeat(4)}<target state="${esc(unit.targetState)}">${esc(unit.target)}</target>\n`
   );
+  if (unit.syncNote) {
+    parts.push(
+      `${INDENT.repeat(4)}<note from="XLIFF Sync" annotates="general" priority="1">${esc(
+        unit.syncNote
+      )}</note>\n`
+    );
+  }
   parts.push(
     `${INDENT.repeat(4)}<note from="Developer" annotates="general" priority="2">${esc(
       unit.developerNote ?? ''

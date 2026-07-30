@@ -1,6 +1,7 @@
 import { buildTransUnitSpanIndex } from './xlfParser';
 import { serializeTransUnit } from './xlfSerializer';
 import type { MergeOptions, MergeResult, MergeStats, TransUnit, XlfDocument } from './types';
+import { defaultMergeOptions } from './types';
 
 function escAttr(str: string): string {
   return str
@@ -27,11 +28,13 @@ export function replaceFileHeaderAttributes(content: string, header: XlfDocument
 
 function unitsEqual(a: TransUnit, b: TransUnit): boolean {
   return (
+    a.id === b.id &&
     a.source === b.source &&
     a.target === b.target &&
     a.targetState === b.targetState &&
     (a.note ?? '') === (b.note ?? '') &&
     (a.developerNote ?? '') === (b.developerNote ?? '') &&
+    (a.syncNote ?? '') === (b.syncNote ?? '') &&
     JSON.stringify(sortRecord(a.extraAttrs)) === JSON.stringify(sortRecord(b.extraAttrs))
   );
 }
@@ -61,6 +64,7 @@ function findGroupBodyInsertOffset(content: string): number {
 /**
  * Applies merge result by replacing only changed trans-units, deleting removed ones, and appending new ones.
  * Preserves document order for existing units (ignores {@link MergeOptions.sortOutput} reordering).
+ * Remapped units (matched by note/source with a new id) replace the old block in place.
  */
 export function applyMergeSurgically(
   buffer: string,
@@ -72,7 +76,12 @@ export function applyMergeSurgically(
 ): string {
   let work = buffer;
 
-  const toRemove = options.preserveRemoved ? [] : [...stats.removed];
+  const remappedFrom = new Set(stats.remapped.map((r) => r.fromId));
+  const remappedTo = new Set(stats.remapped.map((r) => r.toId));
+
+  const toRemove = options.preserveRemoved
+    ? []
+    : stats.removed.filter((id) => !remappedFrom.has(id));
   const spans0 = buildTransUnitSpanIndex(work);
   const removeSpans = toRemove
     .map((id) => spans0.get(id))
@@ -85,8 +94,23 @@ export function applyMergeSurgically(
   const spans = buildTransUnitSpanIndex(work);
 
   const updates: Array<{ start: number; end: number; text: string }> = [];
+
+  for (const remap of stats.remapped) {
+    const merged = result.units.get(remap.toId);
+    if (!merged) {
+      throw new Error(`Surgical merge: missing remapped unit "${remap.toId}".`);
+    }
+    const span = spans.get(remap.fromId);
+    if (!span) {
+      throw new Error(
+        `Surgical merge: remapped source trans-unit "${remap.fromId}" not found in buffer.`
+      );
+    }
+    updates.push({ start: span.start, end: span.end, text: serializeTransUnit(merged) });
+  }
+
   for (const id of custom.orderedIds) {
-    if (toRemove.includes(id)) {
+    if (toRemove.includes(id) || remappedFrom.has(id)) {
       continue;
     }
     const merged = result.units.get(id);
@@ -108,9 +132,10 @@ export function applyMergeSurgically(
     work = work.slice(0, u.start) + u.text + work.slice(u.end);
   }
 
-  if (stats.added.length > 0) {
+  const toAppend = stats.added.filter((id) => !remappedTo.has(id));
+  if (toAppend.length > 0) {
     const insertAt = findGroupBodyInsertOffset(work);
-    const block = stats.added.map((id) => {
+    const block = toAppend.map((id) => {
       const u = result.units.get(id);
       if (!u) {
         throw new Error(`Surgical merge: missing merged unit "${id}".`);
@@ -141,17 +166,18 @@ export function applyTransUnitDiffSurgically(
     added,
     removed,
     conflicts: [],
-    unchanged: 0
+    unchanged: 0,
+    remapped: []
   };
   const result: MergeResult = {
     units: next.units,
     orderedIds: next.orderedIds,
     stats
   };
-  const options: MergeOptions = {
+  const options: MergeOptions = defaultMergeOptions({
     preserveRemoved: false,
     sortOutput: false,
     strategy: 'keep-translated'
-  };
+  });
   return applyMergeSurgically(buffer, prev, result, stats, options, header);
 }
