@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Settings mirroring XLIFF Sync matching/fill options: `findByXliffGeneratorNoteAndSource`, `findByXliffGeneratorAndDeveloperNote`, `findByXliffGeneratorNote`, `findBySourceAndDeveloperNote`, `findBySource`, `parseFromDeveloperNote*`, `copyFromSourceFor*`, `detectSourceTextChanges`, `ignoreLineEndingTypeChanges`, `missingTranslation`, `addNeedsWorkTranslationNote`.
+- **PR preview builds** — GitHub Action `Build VSIX` packages a `.vsix` on every pull request (and via workflow_dispatch), uploads it as an artifact, and posts/updates a PR comment with the download link.
 
 ## [1.2.0] — 2026-03-30
 

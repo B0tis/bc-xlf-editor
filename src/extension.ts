@@ -101,7 +101,7 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       copyFromSourceOverwrite: config.get('copyFromSourceOverwrite', false),
       detectSourceTextChanges: config.get('detectSourceTextChanges', true),
       ignoreLineEndingTypeChanges: config.get('ignoreLineEndingTypeChanges', false),
-      missingTranslation: config.get('missingTranslation', '%EMPTY%'),
+      missingTranslation: config.get('missingTranslation', ''),
       addNeedsWorkTranslationNote: config.get('addNeedsWorkTranslationNote', true)
     });
 

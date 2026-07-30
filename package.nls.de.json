@@ -33,6 +33,6 @@
   "config.copyFromSourceOverwrite.description": "Vorhandene Ziele beim Kopieren aus der Quelle überschreiben.",
   "config.detectSourceTextChanges.description": "Änderungen am Quelltext erkennen und Units zur Prüfung markieren (needs-adaptation).",
   "config.ignoreLineEndingTypeChanges.description": "CRLF vs. LF beim Vergleich des Quelltexts ignorieren.",
-  "config.missingTranslation.description": "Platzhalter für fehlende Übersetzungen. %EMPTY% für leeren String.",
+  "config.missingTranslation.description": "Platzhalter für fehlende Übersetzungen. Leer lassen für leeres Ziel (Literal %EMPTY% nur, wenn dieser Text gewünscht ist).",
   "config.addNeedsWorkTranslationNote.description": "XLIFF-Sync-Note hinzufügen, wenn eine Unit nach Quelltextänderung als needs-adaptation markiert wird."
 }

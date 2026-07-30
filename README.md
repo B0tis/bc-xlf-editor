@@ -57,3 +57,5 @@ pnpm run vsix
 ```
 
 Install locally: **Extensions** → **⋯** → **Install from VSIX…**, or `code --install-extension <path-to-vsix>`.
+
+Pull requests also get an automatic **Build VSIX** GitHub Action: download the artifact from the workflow run (or follow the bot comment on the PR), then install the same way.

@@ -33,6 +33,6 @@
   "config.copyFromSourceOverwrite.description": "Overwrite existing targets when copying from source.",
   "config.detectSourceTextChanges.description": "Detect source text changes and mark units for review (needs-adaptation).",
   "config.ignoreLineEndingTypeChanges.description": "Ignore CRLF vs LF differences when comparing source text.",
-  "config.missingTranslation.description": "Placeholder for missing translations. Use %EMPTY% for an empty string.",
+  "config.missingTranslation.description": "Placeholder text for missing translations. Leave empty for an empty target (use the literal %EMPTY% only if you need that token as text).",
   "config.addNeedsWorkTranslationNote.description": "Add an XLIFF Sync note when a unit is marked needs-adaptation after a source change."
 }
