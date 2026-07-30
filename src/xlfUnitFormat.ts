@@ -46,6 +46,52 @@ function childIndentOf(unitIndent: string): string {
 }
 
 /**
+ * Parse ` attr="value"` pairs from a raw attribute string, preserving order.
+ */
+export function parseAttributeString(attrs: string): { order: string[]; map: Record<string, string> } {
+  const order: string[] = [];
+  const map: Record<string, string> = {};
+  const re = /([^\s=]+)(\s*=\s*)(?:"([^"]*)"|'([^']*)')/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(attrs)) !== null) {
+    const key = m[1];
+    if (!(key in map)) {
+      order.push(key);
+    }
+    map[key] = m[3] ?? m[4] ?? '';
+  }
+  return { order, map };
+}
+
+/**
+ * Build a target attribute string: keep every existing attr, set `state`, and
+ * merge in `targetAttrs` without dropping anything.
+ */
+export function buildTargetAttributeString(
+  existingAttrs: string,
+  state: string,
+  targetAttrs?: Record<string, string>
+): string {
+  const { order, map } = parseAttributeString(existingAttrs);
+  map.state = state;
+  if (!order.includes('state')) {
+    order.unshift('state');
+  }
+  if (targetAttrs) {
+    for (const [k, v] of Object.entries(targetAttrs)) {
+      if (k === 'state') {
+        continue;
+      }
+      map[k] = v;
+      if (!order.includes(k)) {
+        order.push(k);
+      }
+    }
+  }
+  return order.map((k) => ` ${k}="${esc(map[k])}"`).join('');
+}
+
+/**
  * Rewrite an existing `<trans-unit>…</trans-unit>` block in place.
  * Keeps surrounding whitespace, child indentation, and unknown attributes
  * (e.g. target match-percent / origin-*).
@@ -69,15 +115,7 @@ export function rewriteTransUnitBlock(block: string, unit: TransUnit): string {
 
   if (/<target\b/i.test(out)) {
     out = out.replace(/<target\b([^>]*)>([\s\S]*?)<\/target>/i, (_full, attrs: string) => {
-      let nextAttrs = attrs;
-      if (/\bstate\s*=\s*"[^"]*"/i.test(nextAttrs)) {
-        nextAttrs = nextAttrs.replace(
-          /\bstate\s*=\s*"[^"]*"/i,
-          `state="${esc(unit.targetState)}"`
-        );
-      } else {
-        nextAttrs = `${nextAttrs} state="${esc(unit.targetState)}"`;
-      }
+      const nextAttrs = buildTargetAttributeString(attrs, unit.targetState, unit.targetAttrs);
       return `<target${nextAttrs}>${esc(unit.target)}</target>`;
     });
   } else {
@@ -85,9 +123,10 @@ export function rewriteTransUnitBlock(block: string, unit: TransUnit): string {
     out = out.replace(
       /(<source\b[^>]*>[\s\S]*?<\/source>)(\r?\n)([ \t]*)/i,
       (_full, sourceTag: string, nl: string, indent: string) => {
+        const nextAttrs = buildTargetAttributeString('', unit.targetState, unit.targetAttrs);
         return (
           `${sourceTag}${nl}${indent}` +
-          `<target state="${esc(unit.targetState)}">${esc(unit.target)}</target>${nl}${indent}`
+          `<target${nextAttrs}>${esc(unit.target)}</target>${nl}${indent}`
         );
       }
     );
@@ -224,15 +263,7 @@ export function formatTransUnit(unit: TransUnit, options: SerializeTransUnitOpti
 }
 
 function formatTargetAttrs(unit: TransUnit): string {
-  const attrs: string[] = [` state="${esc(unit.targetState)}"`];
-  const extra = unit.targetAttrs ?? {};
-  for (const k of Object.keys(extra).sort()) {
-    if (k === 'state') {
-      continue;
-    }
-    attrs.push(` ${k}="${esc(extra[k])}"`);
-  }
-  return attrs.join('');
+  return buildTargetAttributeString('', unit.targetState, unit.targetAttrs);
 }
 
 function buildTransUnitOpen(unit: TransUnit): string {

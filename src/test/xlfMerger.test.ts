@@ -332,4 +332,66 @@ test('surgical update does not double-indent or insert blank lines', () => {
   );
   assert.ok(!out.includes('</trans-unit>\n\n        <trans-unit'), out);
 });
+
+test('preserves match-percent / origin-* on target through merge + surgical write', () => {
+  const buffer = [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">',
+    '  <file source-language="en-US" target-language="de-DE" original="App" datatype="xml">',
+    '    <body>',
+    '      <group id="body">',
+    '        <trans-unit id="a" size-unit="char" translate="yes" xml:space="preserve">',
+    '          <source>Invoice</source>',
+    '          <target state="translated" match-percent="100" origin-type="tm" origin-system="UI_ALL_DevOps">Rechnung</target>',
+    '          <note from="Developer" annotates="general" priority="2"></note>',
+    '          <note from="Xliff Generator" annotates="general" priority="3">Table Sales - Field Invoice</note>',
+    '        </trans-unit>',
+    '      </group>',
+    '    </body>',
+    '  </file>',
+    '</xliff>'
+  ].join('\n');
+
+  const base = doc([
+    unit({ id: 'a', source: 'Invoice', note: 'Table Sales - Field Invoice' })
+  ]);
+  const custom = doc([
+    unit({
+      id: 'a',
+      source: 'Invoice',
+      target: 'Rechnung',
+      targetState: 'translated',
+      note: 'Table Sales - Field Invoice',
+      targetAttrs: {
+        'match-percent': '100',
+        'origin-type': 'tm',
+        'origin-system': 'UI_ALL_DevOps'
+      }
+    })
+  ]);
+  const options = defaultMergeOptions({ sortOutput: false });
+  const result = mergeXlf(base, custom, options);
+  assert.deepStrictEqual(result.units.get('a')?.targetAttrs, {
+    'match-percent': '100',
+    'origin-type': 'tm',
+    'origin-system': 'UI_ALL_DevOps'
+  });
+
+  // Force a write by changing source (keep-translated).
+  const base2 = doc([
+    unit({ id: 'a', source: 'Sales Invoice', note: 'Table Sales - Field Invoice' })
+  ]);
+  const result2 = mergeXlf(base2, custom, options);
+  const header = {
+    ...base2,
+    targetLanguage: custom.targetLanguage,
+    original: custom.original || base2.original
+  };
+  const out = applyMergeSurgically(buffer, custom, result2, result2.stats, options, header);
+  assert.ok(out.includes('match-percent="100"'), out);
+  assert.ok(out.includes('origin-type="tm"'), out);
+  assert.ok(out.includes('origin-system="UI_ALL_DevOps"'), out);
+  assert.ok(out.includes('state="needs-adaptation"'), out);
+  assert.ok(out.includes('>Rechnung</target>'), out);
+});
 });

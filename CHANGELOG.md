@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Surgical updates no longer **double-indent** trans-units or insert **blank lines** between them (rewrite existing XML in place instead of re-serializing with a hard-coded indent + trailing newline). Extra `<target>` attributes such as `match-percent` / `origin-*` are preserved.
+- **Target metadata preserved** — attributes like `match-percent`, `origin-type`, and `origin-system` on `<target>` are kept through update (parse → merge → surgical/full write).
+- Update progress toast no longer sticks on **Saved.** while waiting for the completion dialog.
 
 ## [1.2.0] — 2026-03-30
 

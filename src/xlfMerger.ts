@@ -211,7 +211,10 @@ export function mergeXlf(
   };
 
   const consumedCustomIds = new Set<string>();
-  const sourceTranslationCache = new Map<string, string>();
+  const sourceTranslationCache = new Map<
+    string,
+    { target: string; targetAttrs?: Record<string, string> }
+  >();
 
   let copyFromSource =
     options.copyFromSourceForSameLanguage &&
@@ -241,6 +244,7 @@ export function mergeXlf(
     let matchedUnit = maps.byId.get(baseId);
     let matchedById = Boolean(matchedUnit);
     let borrowedTarget: string | undefined;
+    let borrowedTargetAttrs: Record<string, string> | undefined;
 
     if (!matchedUnit && findByEnabled) {
       const developerNote = baseUnit.developerNote;
@@ -263,16 +267,23 @@ export function mergeXlf(
           const bySrcDev = maps.bySourceAndDeveloper.get(pairKey(source, developerNote));
           if (bySrcDev && hasUsableTranslation(bySrcDev, missing)) {
             borrowedTarget = bySrcDev.target;
+            borrowedTargetAttrs = bySrcDev.targetAttrs;
           }
         }
         if (isMissingTranslation(borrowedTarget, missing) && options.findBySource) {
-          if (sourceTranslationCache.has(source)) {
-            borrowedTarget = sourceTranslationCache.get(source);
+          const cached = sourceTranslationCache.get(source);
+          if (cached) {
+            borrowedTarget = cached.target;
+            borrowedTargetAttrs = cached.targetAttrs;
           } else {
             const bySrc = maps.bySource.get(source);
             if (bySrc && hasUsableTranslation(bySrc, missing)) {
               borrowedTarget = bySrc.target;
-              sourceTranslationCache.set(source, bySrc.target);
+              borrowedTargetAttrs = bySrc.targetAttrs;
+              sourceTranslationCache.set(source, {
+                target: bySrc.target,
+                targetAttrs: bySrc.targetAttrs
+              });
             }
           }
         }
@@ -323,7 +334,8 @@ export function mergeXlf(
         ...baseUnit,
         target,
         targetState,
-        syncNote: undefined
+        syncNote: undefined,
+        targetAttrs: borrowedTargetAttrs
       });
       continue;
     }
@@ -336,12 +348,16 @@ export function mergeXlf(
     let target = matchedUnit.target;
     let targetState = matchedUnit.targetState;
     let syncNote = matchedUnit.syncNote;
+    let targetAttrs = mergeTargetAttrs(matchedUnit);
 
     // parseFromDeveloperNote / copyFromSource (with optional overwrite) fill translChildNodes
     // in xliff-sync even when a target unit already exists.
     if (borrowedTarget !== undefined && !isMissingTranslation(borrowedTarget, missing)) {
       target = borrowedTarget;
       targetState = 'translated';
+      if (borrowedTargetAttrs) {
+        targetAttrs = { ...borrowedTargetAttrs };
+      }
     }
 
     const mergedUnit: TransUnit = {
@@ -353,7 +369,8 @@ export function mergeXlf(
       developerNote: baseUnit.developerNote ?? matchedUnit.developerNote,
       syncNote,
       extraAttrs: mergeExtraAttrs(baseUnit, matchedUnit),
-      targetAttrs: mergeTargetAttrs(matchedUnit)
+      // Always keep TM/origin metadata from the matched translation unit.
+      targetAttrs
     };
 
     let sourceChanged = false;
