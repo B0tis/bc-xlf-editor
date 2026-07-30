@@ -95,9 +95,9 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
   const customContent = await fs.readFile(customUri.fsPath, 'utf-8');
   const n = Math.max(countTransUnits(baseContent), countTransUnits(customContent));
 
-  const work = async (
+  const runUpdate = async (
     progress?: vscode.Progress<{ message?: string; increment?: number }>
-  ): Promise<void> => {
+  ): Promise<MergeStats> => {
     const report = (message: string) => progress?.report({ message });
 
     const config = vscode.workspace.getConfiguration('bcXlf');
@@ -182,53 +182,49 @@ async function runMerge(baseUri: vscode.Uri, customUri: vscode.Uri): Promise<voi
       }
     }
 
-    report(l10n.t('Saved.'));
-
-    const { stats } = result;
-    const msg = l10n.t(
-      'Update complete: +{0} new · {1} rematched · {2} source changes · −{3} removed',
-      stats.added.length,
-      stats.remapped.length,
-      stats.conflicts.length,
-      stats.removed.length
-    );
-
-    const openDiff = config.get('openDiffAfterMerge', true);
-    if (openDiff) {
-      try {
-        await vscode.commands.executeCommand('git.openChange', customUri);
-      } catch {
-        /* Git extension not active */
-      }
-    }
-
-    const labelOpenDiff = l10n.t('Open Git diff');
-    const labelDetails = l10n.t('Details');
-    const action = await vscode.window.showInformationMessage(msg, labelOpenDiff, labelDetails);
-    if (action === labelOpenDiff) {
-      try {
-        await vscode.commands.executeCommand('git.openChange', customUri);
-      } catch {
-        await vscode.window.showWarningMessage(l10n.t('Could not open Git diff.'));
-      }
-    } else if (action === labelDetails) {
-      await vscode.commands.executeCommand('bcXlf.showSummary');
-    }
+    return result.stats;
   };
 
-  if (n > 1000) {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: l10n.t('BC XLF Editor'),
-        cancellable: false
-      },
-      async (progress) => {
-        await work(progress);
-      }
-    );
-  } else {
-    await work();
+  const stats =
+    n > 1000
+      ? await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: l10n.t('BC XLF Editor'),
+            cancellable: false
+          },
+          async (progress) => runUpdate(progress)
+        )
+      : await runUpdate();
+
+  const config = vscode.workspace.getConfiguration('bcXlf');
+  const msg = l10n.t(
+    'Update complete: +{0} new · {1} rematched · {2} source changes · −{3} removed',
+    stats.added.length,
+    stats.remapped.length,
+    stats.conflicts.length,
+    stats.removed.length
+  );
+
+  if (config.get('openDiffAfterMerge', true)) {
+    try {
+      await vscode.commands.executeCommand('git.openChange', customUri);
+    } catch {
+      /* Git extension not active */
+    }
+  }
+
+  const labelOpenDiff = l10n.t('Open Git diff');
+  const labelDetails = l10n.t('Details');
+  const action = await vscode.window.showInformationMessage(msg, labelOpenDiff, labelDetails);
+  if (action === labelOpenDiff) {
+    try {
+      await vscode.commands.executeCommand('git.openChange', customUri);
+    } catch {
+      await vscode.window.showWarningMessage(l10n.t('Could not open Git diff.'));
+    }
+  } else if (action === labelDetails) {
+    await vscode.commands.executeCommand('bcXlf.showSummary');
   }
 }
 
